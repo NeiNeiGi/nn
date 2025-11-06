@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Neural Network <3</title>
+	<style>
+		
+		body {
+			margin: 0;
+			overflow: hidden;
+			user-select: none;
+			color: #fff;
+			font-family: monospace;
+			font-size: 10px;
+		}
+
+		.loader {
+			position: absolute;
+			left: 0;
+			top: 0;
+			width: 100%;
+			height: 100%;
+			background: #111;
+			display: grid;
+			place-items: center;
+			place-content: center;
+			grid-gap: 6px;
+		}
+
+		.progress {
+			width: 130px;
+			height: 2px;
+			background: #333;
+		}
+
+		.bar {
+			width: 0;
+			height: 100%;
+			background: #fff;
+		}
+
+		.link {
+			color: red;
+			cursor: pointer;
+		}
+
+		.spinner {
+			font-size: 20px;
+			width: 1em;
+			height: 1em;
+			border: 0.15em solid transparent;
+			border-top-color: hsla(0, 0%, 100%, 0.2);
+			border-radius: 50%;
+			animation: spin 0.3s infinite linear;
+		}
+
+		@keyframes spin {
+			from {
+				transform: rotate(0);
+			}
+
+			to {
+				transform: rotate(360deg);
+			}
+		}
+
+		canvas, .ui {
+			position: absolute;
+			left: 0;
+			top: 0;
+			width: 100%;
+			height: 100%;
+		}
+
+		.ui, #hudCanvas {
+			opacity: 0.7;
+			pointer-events: none;
+			transform-origin: 0 0;
+		}
+
+		.header {
+			position: absolute;
+			right: 10px;
+			top: 10px;
+			display: flex; 
+			grid-gap: 4px;
+			flex-direction: column;
+			align-items: end;
+		}
+
+		.title {
+			font-size: 14px;
+		}
+
+		.btn {
+			background: #000;
+			padding: 0.25em 0.5em;
+			cursor: pointer;
+			border: 1px solid #fff;
+			pointer-events: all;
+		}
+
+		.range {
+			--color: #555;
+			-webkit-appearance: none;
+			outline: 0;
+			position: relative;
+			overflow: hidden;
+			font-size: 16px;
+			height: 1em;
+			width: 5em;
+			cursor: col-resize;
+			border-radius: 0;
+			box-shadow: 0 0 0 0.1em #000;
+		}
+
+		::-webkit-slider-runnable-track {
+			background: #aaa;
+		}
+
+		::-webkit-slider-thumb {
+			-webkit-appearance: none;
+			width: 0.3em;
+			height: 1em;
+			background: #fff;
+			box-shadow: -100em 0 0 100em var(--color);
+		}
+
+		::-moz-range-track {
+			height: 1em;
+			background: #aaa;
+		}
+
+		::-moz-range-thumb {
+			width: 0.3em;
+			height: 1em;
+			background: #fff;
+			box-shadow: -100em 0 0 100em var(--color);
+			border-radius: 0 !important;
+		}
+
+		.checkbox {
+			width: 20px;
+			height: 20px;
+			background: #777;
+			margin: 0;
+			border: 2px solid rgba(0, 0, 0, 0.2);
+			border-radius: 2px;
+			appearance: none;
+			-webkit-appearance: none;
+			position: relative;
+			cursor: pointer;
+			outline: 0;
+		}
+
+		.checkbox:after {
+			content: ' ';
+			position: absolute;
+			left: 0;
+			top: 0;
+			width: 100%;
+			height: 100%;
+			background: #ccc;
+			transition: all 0.5s;
+			opacity: 0;
+		}
+
+		.checkbox:checked:after {
+			opacity: 1;
+		}
+
+		.settings {
+			position: absolute;
+			left: 10px;
+			top: 10px;
+			display: flex;
+			grid-gap: 5px;
+			flex-direction: column;
+			pointer-events: all;
+		}
+
+		label {
+			cursor: pointer;
+		}
+
+		.row {
+			display: flex;
+			grid-gap: 6px;
+			align-items: center;
+		}
+
+		.info {
+			width: 280px;
+			background: rgba(0, 0, 0, 0.3);
+			padding: 6px;
+			border-radius: 5px;
+			border: 2px solid hsla(0, 0%, 100%, 0.2);
+			margin-bottom: 5px;
+			display: grid;
+			grid-gap: 5px;
+		}
+
+	</style>
+</head>
+<body>
+	<canvas id="canvas"></canvas>
+	<canvas id="hudCanvas"></canvas>
+	<div class="ui">
+		<div class="header">
+			<div class="title">Neural Network XD</div>
+			<div>by Chu Won UwU <3</div>
+		</div>
+		<div class="settings">
+			<div class="info">
+				<div>To view predictions, stop training or wait for the training to complete. It is going to take a while cos js moment. Sometimes the model can run into NaNs cope L. just reload the page.</div>
+				<div>Drag to orbit. Scroll to zoom.</div>
+			</div>
+		</div>
+	</div>
+	<script src="main.js"></script>
+</body>
+</html>
