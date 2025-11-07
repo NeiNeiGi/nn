@@ -9,7 +9,7 @@ const epochs = 100;
 
 let showT = 0;
 let progress = 0;
-let showText = 'idle';
+let progressText = 'starting';
 
 let epoch = 0;
 let epoching = false;
@@ -20,7 +20,7 @@ let predicting = false;
 
 function updateEpochProgress() {
 	progress = Math.min(1, epoch / epochs);
-	showText = `training epoch ${epoch}/${epochs}`;
+	progressText = `training epoch ${epoch}/${epochs}`;
 }
 
 function reset() {
@@ -48,7 +48,7 @@ worker.onmessage = function (event) {
 	switch (msg.id) {
 		case 'progress':
 			progress = msg.percent;
-			showText = `loading dataset ${(msg.percent * 100).toFixed(2)}%`;
+			progressText = `loading dataset ${(msg.percent * 100).toFixed(2)}%`;
 			break;
 
 		case 'loaded':
@@ -724,8 +724,8 @@ function createImage(data, size) {
 	}
 
 	for (let i = 0; i < data.length; i++) {
-		const f = (data[i] - min) / (max - min);
-		imageData.data.set(hsl2rgb(f * 100, 1, f * 0.5), i * 4);
+		const f = (data[i] - min) / (max - min) * 255;
+		imageData.data.set([f, f, f, 255], i * 4);
 	}
 
 	ctx.putImageData(imageData, 0, 0);
@@ -854,7 +854,7 @@ function renderBg() {
 	gl.drawElements(gl.TRIANGLES, mesh.indices.length, gl.UNSIGNED_SHORT, 0);			
 	gl.cullFace(gl.BACK);
 
-	gl.disableVertexAttribArray(program.attributes.position);
+	gl.disableVertexAttribArray(bgProgram.attributes.position);
 
 	gl.clear(gl.DEPTH_BUFFER_BIT);
 }
@@ -955,6 +955,8 @@ function drawHud(ctx) {
 	ctx.save();
 	ctx.scale2(scale);
 
+	ctx.lineCap = ctx.lineJoin = 'round';
+
 	ctx.font = 'normal 10px monospace';
 	ctx.textBaseline = 'middle';	
 	ctx.textAlign = 'center';
@@ -1019,32 +1021,42 @@ function drawHud(ctx) {
 
 	if (picked) {
 		const [x, y, z] = project(...picked.pos);
-		
-		ctx.save();
-		ctx.translate(x * W, y * H);
-		ctx.lineWidth = 2;
-		ctx.strokeStyle = getHoverColor();
-		const s = r + (Math.sin(now / 100) * 0.5 + 0.5) * Math.min(r, 20);
-		ctx.strokeRect(-s, -s, s * 2, s * 2);
+		if (inView(x, y, z)) {
+			ctx.save();
+			ctx.translate(x * W, y * H);
+			ctx.lineWidth = 2;
+			ctx.strokeStyle = getHoverColor();
+			const s = r + (Math.sin(now / 100) * 0.5 + 0.5) * Math.min(r, 20);
+			ctx.strokeRect(-s, -s, s * 2, s * 2);
 
-		const size = 90;
+			const size = 90;
 
-		ctx.translate(0, -r - 10 - size);
+			ctx.translate(0, -r - 10 - size);
 
-		ctx.imageSmoothingEnabled = false;
-		ctx.drawImage(picked.image, -size / 2, 0, size, size);
+			ctx.imageSmoothingEnabled = false;
+			ctx.drawImage(picked.image, -size / 2, 0, size, size);
 
-		ctx.translate(0, -5);
-		ctx.fillStyle = colors.label;
-		ctx.textAlign = 'center';
-		ctx.textBaseline = 'bottom';
-		ctx.fillText(picked.name, 0, 0);
+			ctx.translate(0, -5);
+			ctx.fillStyle = colors.label;
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'bottom';
+			ctx.fillText(picked.name, 0, 0);
 
-		ctx.restore();
+			ctx.restore();
+		}
+	}
+
+	if (666) {
+		const [x, y, z] = project(69, 699, 420);
+		if (inView(x, y, z)) {
+			ctx.font = 'bolder 10px monospace';
+			ctx.fillStyle = getHoverColor();
+			ctx.fillText('⛧6⛧6⛧6⛧', x * W, y * H);
+		} 
 	}
 
 	ctx.save();
-	ctx.translate(10, H - 25);
+	ctx.translate(12, H - 12 - 16);
 
 	const graphWidth = 90;
 	const graphHeight = 50;
@@ -1072,28 +1084,26 @@ function drawHud(ctx) {
 		ctx.lineTo(graphWidth, 0);
 		ctx.lineTo(0, 0);
 		ctx.closePath();
-		ctx.lineWidth = 1;
-		ctx.lineCap = ctx.lineJoin = 'round';
-		ctx.strokeStyle = '#fff';
 		ctx.fillStyle = '#333';
 		ctx.globalAlpha = 0.3;
 		ctx.fill();
+		ctx.lineWidth = 1;
+		ctx.strokeStyle = '#888';
 		ctx.globalAlpha = 1;
 		ctx.stroke();
 
-		ctx.fillStyle = '#fff';
+		ctx.fillStyle = '#888';
 		ctx.font = 'bolder 16px monospace';
 		ctx.textBaseline = 'bottom';
 		ctx.textAlign = 'right';
 		const n = graph.points.length > 0 ? graph.points[graph.points.length - 1] : 0;
-		ctx.globalAlpha = 0.5;
 		ctx.fillText(n.toFixed(2), graphWidth, 0);
 
-		ctx.globalAlpha = 1;
+		ctx.fillStyle = '#fff';
 		ctx.font = 'normal 10px monospace';
 		ctx.textBaseline = 'top';
 		ctx.textAlign = 'left';
-		ctx.fillText(graph.name, 0, 5);
+		ctx.fillText(graph.name, 0, 6);
 
 		ctx.restore();
 
@@ -1102,34 +1112,32 @@ function drawHud(ctx) {
 
 	ctx.restore();
 
-	if (showT > 0) {
-		ctx.save();
-		ctx.translate(-400 * (1 - showT), H - 120);
+	ctx.save();
+	ctx.translate(-400 * (1 - showT), H - 130);
 
-		ctx.beginPath();
-		ctx.rect(-5, -18, 250 + 5, 36);
-		ctx.fillStyle = '#333';
-		ctx.globalAlpha = 0.3;
-		ctx.fill();
-		ctx.globalAlpha = 1;
-		ctx.lineWidth = 1;
-		ctx.strokeStyle = '#fff';
-		ctx.lineCap = ctx.lineJoin = 'round';
-		ctx.stroke();
+	ctx.beginPath();
+	ctx.rect(-5, -18, 250 + 5, 36);
+	ctx.fillStyle = '#333';
+	ctx.globalAlpha = 0.3;
+	ctx.fill();
+	ctx.lineWidth = 1;
+	ctx.strokeStyle = '#888';
+	ctx.lineCap = ctx.lineJoin = 'round';
+	ctx.globalAlpha = 1;
+	ctx.stroke();
 
-		ctx.globalAlpha = 0.15;
-		ctx.fillStyle = '#fff';
-		ctx.fillRect(0, -14, 246 * progress, 28);
+	ctx.globalAlpha = 0.1;
+	ctx.fillStyle = '#fff';
+	ctx.fillRect(0, -14, 246 * progress, 28);
 
-		ctx.globalAlpha = 1;
-		ctx.fillStyle = '#fff';
-		ctx.font = 'normal 11px monospace';
-		ctx.textBaseline = 'middle';
-		ctx.textAlign = 'left';
-		ctx.fillText(showText + (progress !== 1 ? '.'.repeat((now / 1000 % 1) * 10) : ''), 10, 0);
+	ctx.globalAlpha = 1;
+	ctx.fillStyle = '#fff';
+	ctx.font = 'normal 10px monospace';
+	ctx.textBaseline = 'middle';
+	ctx.textAlign = 'left';
+	ctx.fillText(progressText + (progress !== 1 ? '.'.repeat((now / 1000 % 1) * 10) : ''), 10, 0);
 
-		ctx.restore();
-	}
+	ctx.restore();
 
 	ctx.restore();
 }
@@ -1260,14 +1268,15 @@ function SketchUI() {
 	const size = 150;
 	const el = fromHtml(`<div style="
 		position: absolute;
-		right: 10px;
-		bottom: 10px;
+		right: 12px;
+		bottom: 12px;
 		display: flex;
 		flex-direction: column;
 		align-items: end;
 		grid-gap: 5px;
 		pointer-events: all;
 	">
+		<div>draw a digit xp</div>
 		<div class="row">
 			<div class="btn predict-btn">predict</div>
 			<div class="btn clear-btn">clear</div>
@@ -1276,18 +1285,10 @@ function SketchUI() {
 			width: ${size}px;
 			height: ${size}px;
 			border-radius: 5px;
-			background: hsla(0, 0%, 10%, 0.3);
+			background: hsla(0, 0%, 20%, 0.3);
 			border: 2px solid hsla(0, 0%, 100%, 0.2);
 			pointer-events: all;
 		"></canvas>
-		<div style="
-			position: absolute;
-			left: 50%;
-			bottom: 8px;
-			transform: translate(-50%, 0);
-			white-space: nowrap;
-			pointer-events: none;
-		">draw a digit xd</div>
 	</div>`);
 	uiEl.appendChild(el);
 
@@ -1331,7 +1332,7 @@ function SketchUI() {
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
 
 		ctx.save();
-		ctx.scale2(window.devicePixelRatio)
+		ctx.scale2(window.devicePixelRatio);
 
 		ctx.filter = 'blur(2px)';
 		
@@ -1344,7 +1345,7 @@ function SketchUI() {
 			}
 		}
 
-		ctx.lineWidth = 13;
+		ctx.lineWidth = 15;
 		ctx.strokeStyle = '#fff';
 		ctx.lineCap = ctx.lineJoin = 'round';
 		ctx.stroke();
@@ -1361,11 +1362,4 @@ function SketchUI() {
 	}
 
 	return el;
-}
-
-// stackoverflow moment :3
-function hsl2rgb(h,s,l) {
-	let a=s*Math.min(l,1-l);
-	let f= (n,k=(n+h/30)%12) => l - a*Math.max(Math.min(k-3,9-k,1),-1);
-	return [f(0)*255,f(8)*255,f(4)*255,255];
 }

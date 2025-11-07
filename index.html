@@ -13,6 +13,7 @@
 			color: #fff;
 			font-family: monospace;
 			font-size: 10px;
+			background: #000;
 		}
 
 		#canvas, #hudCanvas, .ui {
@@ -31,20 +32,21 @@
 
 		.header {
 			position: absolute;
-			right: 10px;
-			top: 10px;
+			right: 12px;
+			top: 12px;
 			display: flex; 
 			grid-gap: 4px;
 			flex-direction: column;
 			align-items: end;
+			font-size: 12px;
 		}
 
 		.title {
-			font-size: 14px;
+			font-size: 16px;
 		}
 
 		.range {
-			--color: #555;
+			--color: #888;
 			-webkit-appearance: none;
 			outline: 0;
 			position: relative;
@@ -54,18 +56,19 @@
 			width: 5em;
 			cursor: col-resize;
 			border-radius: 0;
-			box-shadow: 0 0 0 0.1em #000;
+			margin: 0;
+			flex: 1;
 		}
 
 		::-webkit-slider-runnable-track {
-			background: #aaa;
+			background: #444;
 		}
 
 		::-webkit-slider-thumb {
 			-webkit-appearance: none;
 			width: 0.3em;
 			height: 1em;
-			background: #fff;
+			background: #ccc;
 			box-shadow: -100em 0 0 100em var(--color);
 		}
 
@@ -83,12 +86,11 @@
 		}
 
 		.checkbox {
-			width: 20px;
-			height: 20px;
+			font-size: 18px;
+			width: 1em;
+			height: 1em;
 			background: #777;
 			margin: 0;
-			border: 2px solid rgba(0, 0, 0, 0.2);
-			border-radius: 2px;
 			appearance: none;
 			-webkit-appearance: none;
 			position: relative;
@@ -96,26 +98,14 @@
 			outline: 0;
 		}
 
-		.checkbox:after {
-			content: ' ';
-			position: absolute;
-			left: 0;
-			top: 0;
-			width: 100%;
-			height: 100%;
+		.checkbox:checked {
 			background: #ccc;
-			transition: all 0.5s;
-			opacity: 0;
-		}
-
-		.checkbox:checked:after {
-			opacity: 1;
 		}
 
 		.settings {
 			position: absolute;
-			left: 10px;
-			top: 10px;
+			left: 12px;
+			top: 12px;
 			display: flex;
 			grid-gap: 5px;
 			flex-direction: column;
@@ -132,7 +122,7 @@
 
 		.row {
 			display: flex;
-			grid-gap: 6px;
+			grid-gap: 5px;
 			align-items: center;
 		}
 
@@ -140,17 +130,15 @@
 			width: 280px;
 			padding: 6px;
 			border-radius: 5px;
-			background: hsla(0, 0%, 10%, 0.3);
+			background: hsla(0, 0%, 20%, 0.3);
 			border: 2px solid hsla(0, 0%, 100%, 0.2);
 			margin-bottom: 5px;
-			display: grid;
-			grid-gap: 5px;
 		}
 
 		.btn {
 			color: #fff;
 			padding: 0.4em 0.7em;
-			background: hsla(0, 0%, 10%, 0.3);
+			background: hsla(0, 0%, 20%, 0.3);
 			border: 2px solid hsla(0, 0%, 100%, 0.2);
 			border-radius: 4px;
 			cursor: pointer;
@@ -167,10 +155,7 @@
 			<div>by Chu Won UwU <3</div>
 		</div>
 		<div class="settings">
-			<div class="info">
-				<div>To view predictions, stop training or wait for the training to complete. It is going to take a while cos js moment. Sometimes the model can run into NaNs cope L. just reload the page.</div>
-				<div>Drag to orbit. Scroll to zoom. Hover over neurons to see weights.</div>
-			</div>
+			<div class="info">pause the training or wait for it to finish to see predictions. sometimes the model can run into NaNs cope L or reload the page. drag to orbit. scroll to zoom. hover over boxes to see weights xp xp</div>
 		</div>
 	</div>
 	<script src="main.js"></script>
