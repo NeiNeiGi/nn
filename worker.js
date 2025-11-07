@@ -251,6 +251,33 @@ function createDatasets(dataSplit, trainSplit) {
 	return { train, val };
 }
 
+function prepareData(data) {
+	const x = new Float32Array(data.length * inputLayerSize);
+	const y = new Uint8Array(data.length * outputLayerSize);
+
+	const counter = {};
+
+	for (let i = 0; i < data.length; i++) {
+		const item = data[i];
+		x.set(item.x, i * inputLayerSize);
+		y[i * outputLayerSize + item.y] = 1;
+	
+		counter[item.y] = (counter[item.y] || 0) + 1;
+	}
+
+	let text = `${data.length} total samples:\n`;
+
+	for (const key in counter) {
+		const n = counter[key];
+		const percent = n / data.length * 100;
+		text += `${key} / ${n} / ${percent.toFixed(2)}%\n`;
+	}
+
+	console.log(text);
+
+	return [x, y];
+}
+
 function train() {
 	const startTime = performance.now();
 
@@ -280,6 +307,17 @@ function train() {
 		valAccuracy, 
 		timeTaken
 	});
+
+	sendParams();
+}
+
+function sendParams() {
+	postMessage({
+		id: 'params', 
+		modelId, 
+		w1: model.w1, 
+		w2: model.w2
+	});
 }
 
 function getAccuracy(targets, predictions) {
@@ -303,33 +341,6 @@ function getAccuracy(targets, predictions) {
 
 	const n = targets.length / outputLayerSize;
 	return correct / n;
-}
-
-function prepareData(data) {
-	const x = new Float32Array(data.length * inputLayerSize);
-	const y = new Uint8Array(data.length * outputLayerSize);
-
-	const counter = {};
-
-	for (let i = 0; i < data.length; i++) {
-		const item = data[i];
-		x.set(item.x, i * inputLayerSize);
-		y[i * outputLayerSize + item.y] = 1;
-	
-		counter[item.y] = (counter[item.y] || 0) + 1;
-	}
-
-	let text = `${data.length} total samples:\n`;
-
-	for (const key in counter) {
-		const n = counter[key];
-		const percent = n / data.length * 100;
-		text += `${key} / ${n} / ${percent.toFixed(2)}%\n`;
-	}
-
-	console.log(text);
-
-	return [x, y];
 }
 
 function predict() {
@@ -366,6 +377,7 @@ addEventListener('message', event => {
 			outputLayerSize = msg.outputLayerSize;
 			modelId = msg.modelId;
 			model = new Model();
+			sendParams();
 			break;
 
 		case 'train':

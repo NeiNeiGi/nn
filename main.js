@@ -13,6 +13,7 @@ let showText = 'idle';
 
 let epoch = 0;
 let epoching = false;
+let params;
 
 let prediction = null;
 let predicting = false;
@@ -32,6 +33,7 @@ function reset() {
 	predictT = 0;
 
 	epoching = false;
+	params = null;
 
 	createModel();
 }
@@ -74,6 +76,11 @@ worker.onmessage = function (event) {
 			updateEpochProgress();
 			break;
 
+		case 'params':
+			if (msg.modelId !== modelId) break;
+			params = msg;
+			break;
+
 		case 'prediction':
 			if (msg.modelId !== modelId) break;
 			predicting = false;
@@ -113,8 +120,6 @@ worker.onmessage = function (event) {
 
 			msg.result = maxIndex;
 			prediction = msg;
-
-			console.log(prediction)
 
 			console.log(`prediction: ${maxIndex}, target: ${msg.y}`);
 			break;
@@ -175,7 +180,7 @@ function initGraphs() {
 			name: fromCamel(key), 
 			points: [], 
 			max: -Infinity,
-			t: 2 + i
+			i: 1 + i
 		};
 	}
 }
@@ -206,7 +211,7 @@ const settings = {
 	hiddenLayerSideLength: [hiddenLayerLength, 1, 10, 1], 
 	learningRate: [0.5, 0.01, 1, 0.01], 
 	trainSplit: [0.8, 0.01, 0.99, 0.01], 
-	dataSplit: [0.12, 0.01, 0.99, 0.01], 
+	dataSplit: [0.12, 0.01, 1, 0.01], 
 	trainAnimTime: [10, 1, 20, 1], 
 	predictAnimTime: [2, 0.1, 10, 0.1], 
 	orbitSpeed: [1, 0, 50, 1]
@@ -232,11 +237,11 @@ for (const key in settings) {
 		const [n, min, max, step] = value;
 		settings[key] = n;
 
-		const el = fromHtml(`<label class="row">
+		const el = fromHtml(`<div class="row">
 			<div>${fromCamel(key)}:</div>
 			<input type="range" class="range" min="${min}" max="${max}" step="${step}">
 			<div></div>
-		</label>`);
+		</div>`);
 
 		const rangeEl = el.querySelector('.range');
 		rangeEl.value = n;
@@ -483,7 +488,7 @@ let linePosBuffer,
 	lineDistanceAndAlphaBuffer;
 
 function initObjects() {
-	if (objectCount === undefined) {
+	if (worldPosBuffer) {
 		gl.deleteBuffer(worldPosBuffer);
 		gl.deleteBuffer(activationBuffer);
 		gl.deleteBuffer(objectIdBuffer);
@@ -599,6 +604,8 @@ canvas.onwheel = function (event) {
 	nDepth = Math.max(minDepth, Math.min(nDepth, maxDepth));
 }
 
+let picked;
+
 let lastPoint;
 canvas.onmousedown = function (event) {
 	if (event.button === 0) {
@@ -614,12 +621,97 @@ window.onmousemove = function (event) {
 		nry -= dx * 0.01;
 		nrx = Math.max(-Math.PI / 2, Math.min(nrx, Math.PI / 2));
 		lastPoint = p;
+	} else if (params) {
+		picked = pick();
 	}
 }
 window.onmouseup = function (event) {
 	if (event.button === 0) {
 		lastPoint = null;
 	}
+}
+
+function pick() {
+	picked = null;
+
+	const px = event.clientX;
+	const py = event.clientY;
+
+	const W = window.innerWidth;
+	const H = window.innerHeight;
+	const r = getWorldSpaceSize() * H + 10;
+
+	for (let y1 = 0; y1 < hiddenLayerLength; y1++) {
+		for (let x1 = 0; x1 < hiddenLayerLength; x1++) {
+			const pos = [
+				getCoord(x1, hiddenLayerLength), 
+				-getCoord(y1, hiddenLayerLength), 
+				0
+			];
+			const [x, y, z] = project(...pos);
+
+			if (inView(x, y, z) && Math.hypot(px - x * W, py - y * H) < r) {
+				const start = inputLayerSize * (y1 * hiddenLayerLength + x1);
+
+				return {
+					name: `HiddenLayer (${x1 + 1}, ${y1 + 1})`, 
+					image: createImage(
+						params.w1.slice(start, start + inputLayerSize), 
+						inputLayerLength
+					), 
+					pos
+				};
+			}
+		}
+	}
+
+	for (let y1 = 0; y1 < outputLayerSize; y1++) {
+		const pos = [
+			0, 
+			-getCoord(y1, outputLayerSize), 
+			50
+		];
+		const [x, y, z] = project(...pos);
+
+		if (inView(x, y, z) && Math.hypot(px - x * W, py - y * H) < r) {
+			return {
+				name: `OutputLayer (1, ${y1 + 1})`, 
+				image: createImage(
+					params.w2.slice(y1 * hiddenLayerSize, (y1 + 1) * hiddenLayerSize), 
+					hiddenLayerLength
+				), 
+				pos
+			};
+		}
+	}
+}
+
+function createImage(data, size) {
+	const canvas = document.createElement('canvas');
+	canvas.width = canvas.height = size;
+	const ctx = canvas.getContext('2d');
+
+	const imageData = ctx.createImageData(size, size);
+
+	let min = Infinity;
+	let max = -Infinity;
+	for (let i = 0; i < data.length; i++) {
+		min = Math.min(data[i], min);
+		max = Math.max(data[i], max);
+	}
+
+	for (let i = 0; i < data.length; i++) {
+		const f = (data[i] - min) / (max - min) * 255;
+		imageData.data.set([f, f, f, 255], i * 4);
+	}
+
+	ctx.putImageData(imageData, 0, 0);
+
+	return canvas;
+}
+
+function inView(x, y, z) {
+	return x > 0 && x < 1 && y > 0 && y < 1 && z > 0 && z < 1;
 }
 
 let predictT = 0;
@@ -647,12 +739,6 @@ function update() {
 	depth = lerp(depth, nDepth, lf);
 
 	lf = getLerpFactor(0.1);
-
-	for (const key in graphs) {
-		const graph = graphs[key];
-		graph.t = lerp(graph.t, 0, lf);
-	}
-
 	showT = lerp(showT, 1, lf);
 	headerEl.style.transform = `translateX(${(1 - showT) * 200}%)`;
 	settingsEl.style.transform = `translateY(${(1 - showT) * -200}%)`;
@@ -846,7 +932,8 @@ function drawHud(ctx) {
 	ctx.textAlign = 'center';
 	ctx.fillStyle = colors.activation;
 
-	const offset = Math.abs(project(0, 0.5, 0)[1] - 0.5) * W + 10;
+	const r = getWorldSpaceSize() * H;
+	const offset = r + 10;
 
 	if (predictT > 0.5 && depth < 100) {
 		for (let y1 = 0; y1 < hiddenLayerLength; y1++) {
@@ -857,7 +944,7 @@ function drawHud(ctx) {
 					0
 				);
 
-				if (x > 0 && x < 1 && y > 0 && y < 1 && z > 0 && z < 1) {
+				if (inView(x, y, z)) {
 					const v = prediction.a1[y1 * hiddenLayerLength + x1];
 					const dir = x1 % 2 === 0 ? -1 : 1;
 					ctx.fillText(v.toFixed(2), x * W, y * H + dir * offset);
@@ -868,7 +955,7 @@ function drawHud(ctx) {
 
 	for (let i = 0; i < outputLayerSize; i++) {
 		const [x, y, z] = project(0, -(i / (outputLayerSize - 1) * 2 - 1) * outputLayerSize * gap, 50);
-		if (x > 0 && x < 1 && y > 0 && y < 1 && z > 0 && z < 1) {
+		if (inView(x, y, z)) {
 			const dir = x > 0.5 ? 1 : -1;
 			ctx.save();
 			ctx.translate(x * W, y * H);
@@ -893,13 +980,39 @@ function drawHud(ctx) {
 					ctx.lineTo(15, -5);
 					ctx.lineTo(15, -12);
 					ctx.closePath();
-					ctx.fillStyle = `hsl(${(now / 400 % 1) * 360}deg, 100%, 80%)`;
+					ctx.fillStyle = getHoverColor();
 					ctx.fill();
 				}
 			}
 
 			ctx.restore();
 		}
+	}
+
+	if (picked) {
+		const [x, y, z] = project(...picked.pos);
+		
+		ctx.save();
+		ctx.translate(x * W, y * H);
+		ctx.lineWidth = 2;
+		ctx.strokeStyle = getHoverColor();
+		const s = r + (Math.sin(now / 100) * 0.5 + 0.5) * Math.min(r, 20);
+		ctx.strokeRect(-s, -s, s * 2, s * 2);
+
+		const size = 120;
+
+		ctx.translate(0, -r - 10 - size);
+
+		ctx.imageSmoothingEnabled = false;
+		ctx.drawImage(picked.image, -size / 2, 0, size, size);
+
+		ctx.translate(0, -5);
+		ctx.fillStyle = colors.label;
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'bottom';
+		ctx.fillText(picked.name, 0, 0);
+
+		ctx.restore();
 	}
 
 	ctx.save();
@@ -912,7 +1025,7 @@ function drawHud(ctx) {
 		const graph = graphs[key];
 
 		ctx.save();
-		ctx.translate(0, graph.t * graphHeight * 1.5);
+		showT < 1 && ctx.translate(0, (1 - Math.pow(showT, graph.i)) * graphHeight * 4);
 
 		ctx.beginPath();
 		let y = 0;
@@ -991,6 +1104,14 @@ function drawHud(ctx) {
 	}
 
 	ctx.restore();
+}
+
+function getHoverColor() {
+	return `hsl(${(now / 400 % 1) * 360}deg, 100%, 70%)`;
+}
+
+function getWorldSpaceSize() {
+	return Math.abs(project(0, 1, 0)[1] - 0.5);
 }
 
 function animate() {
