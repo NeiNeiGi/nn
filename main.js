@@ -121,7 +121,7 @@ worker.onmessage = function (event) {
 			msg.result = maxIndex;
 			prediction = msg;
 
-			console.log(`prediction: ${maxIndex}, target: ${msg.y}`);
+			console.log(`prediction: ${maxIndex}, prob: ${maxA2}`);
 			break;
 
 		default:
@@ -160,7 +160,30 @@ function isTraining() {
 	return settings.trainingEnabled && (epoch < epochs || settings.endlessTraining);
 }
 
+let userInput = null;
+
+function setUserInput(image) {
+	const canvas = document.createElement('canvas');
+	canvas.width = canvas.height = inputLayerLength;
+	const ctx = canvas.getContext('2d');
+
+	ctx.drawImage(image, 0, 0, inputLayerLength, inputLayerLength);
+
+	const imageData = ctx.getImageData(0, 0, inputLayerLength, inputLayerLength);
+
+	userInput = new Float32Array(inputLayerSize);
+	for (let i = 0; i < inputLayerSize; i++) {
+		userInput[i] = imageData.data[i * 4 + 3] / 255;
+	}
+
+	predictT = 0;
+}
+
 // rendering
+
+CanvasRenderingContext2D.prototype.scale2 = function (f) {
+	this.scale(f, f);
+}
 
 const colors = {
 	activation: '#ffeb3b', 
@@ -412,7 +435,7 @@ uniform float d;
 uniform float alpha;
 
 void main() {
-	float w = ${lineGlowSize.toFixed(69)};
+	float w = ${lineGlowSize.toFixed(2.666)};
 	float f = smoothstep(1.0, 0.0, abs(vDistanceAndAlpha.x - d * (1.0 + w * 2.0) + w) / w) * 5.0 + 1.0;
 	gl_FragColor = vec4(f * vDistanceAndAlpha.y * alpha);
 }
@@ -701,8 +724,8 @@ function createImage(data, size) {
 	}
 
 	for (let i = 0; i < data.length; i++) {
-		const f = (data[i] - min) / (max - min) * 255;
-		imageData.data.set([f, f, f, 255], i * 4);
+		const f = (data[i] - min) / (max - min);
+		imageData.data.set(hsl2rgb(f * 100, 1, f * 0.5), i * 4);
 	}
 
 	ctx.putImageData(imageData, 0, 0);
@@ -713,6 +736,8 @@ function createImage(data, size) {
 function inView(x, y, z) {
 	return x > 0 && x < 1 && y > 0 && y < 1 && z > 0 && z < 1;
 }
+
+const sketchEl = SketchUI();
 
 let predictT = 0;
 
@@ -742,6 +767,7 @@ function update() {
 	showT = lerp(showT, 1, lf);
 	headerEl.style.transform = `translateX(${(1 - showT) * 200}%)`;
 	settingsEl.style.transform = `translateY(${(1 - showT) * -200}%)`;
+	sketchEl.style.transform = `translateY(${(1 - showT) * 200}%)`;
 
 	if (loaded) {
 		if (isTraining()) {
@@ -756,8 +782,10 @@ function update() {
 			if (predictT === 0) {
 				predicting = true;
 				worker.postMessage({
-					id: 'predict'
+					id: 'predict', 
+					x: userInput
 				});
+				userInput = null;
 			}
 
 			predictT += dts / settings.predictAnimTime;
@@ -925,7 +953,7 @@ function drawHud(ctx) {
 	const H = canvas.height / scale;
 
 	ctx.save();
-	ctx.scale(scale, scale);
+	ctx.scale2(scale);
 
 	ctx.font = 'normal 10px monospace';
 	ctx.textBaseline = 'middle';	
@@ -935,7 +963,7 @@ function drawHud(ctx) {
 	const r = getWorldSpaceSize() * H;
 	const offset = r + 10;
 
-	if (predictT > 0.5 && depth < 100) {
+	if (prediction && predictT > 0.5 && depth < 100) {
 		for (let y1 = 0; y1 < hiddenLayerLength; y1++) {
 			for (let x1 = 0; x1 < hiddenLayerLength; x1++) {
 				const [x, y, z] = project(
@@ -963,7 +991,7 @@ function drawHud(ctx) {
 			ctx.fillStyle = colors.label;
 			ctx.fillText(i, dir * offset, 0);
 
-			if (predictT > 1) {
+			if (prediction && predictT > 1) {
 				ctx.textAlign = x < 0.5 ? 'left' : 'right';
 				ctx.fillStyle = colors.activation;
 				ctx.fillText(prediction.a2[i].toFixed(2), -dir * offset, 0);
@@ -999,7 +1027,7 @@ function drawHud(ctx) {
 		const s = r + (Math.sin(now / 100) * 0.5 + 0.5) * Math.min(r, 20);
 		ctx.strokeRect(-s, -s, s * 2, s * 2);
 
-		const size = 120;
+		const size = 90;
 
 		ctx.translate(0, -r - 10 - size);
 
@@ -1226,4 +1254,118 @@ function transformVector(p, matrix) {
 		p[0] * matrix[2] + p[1] * matrix[6] + p[2] * matrix[10] + p[3] * matrix[14], 
 		p[0] * matrix[3] + p[1] * matrix[7] + p[2] * matrix[11] + p[3] * matrix[15]
 	];
+}
+
+function SketchUI() {
+	const size = 150;
+	const el = fromHtml(`<div style="
+		position: absolute;
+		right: 10px;
+		bottom: 10px;
+		display: flex;
+		flex-direction: column;
+		align-items: end;
+		grid-gap: 5px;
+		pointer-events: all;
+	">
+		<div class="row">
+			<div class="btn predict-btn">predict</div>
+			<div class="btn clear-btn">clear</div>
+		</div>
+		<canvas style="
+			width: ${size}px;
+			height: ${size}px;
+			border-radius: 5px;
+			background: hsla(0, 0%, 10%, 0.3);
+			border: 2px solid hsla(0, 0%, 100%, 0.2);
+			pointer-events: all;
+		"></canvas>
+		<div style="
+			position: absolute;
+			left: 50%;
+			bottom: 8px;
+			transform: translate(-50%, 0);
+			white-space: nowrap;
+			pointer-events: none;
+		">draw a digit xd</div>
+	</div>`);
+	uiEl.appendChild(el);
+
+	const canvas = el.querySelector('canvas');
+	canvas.width = canvas.height = size * window.devicePixelRatio;
+	const ctx = canvas.getContext('2d');
+
+	el.querySelector('.clear-btn').onclick = function () {
+		paths.length = 0;
+		path = null;
+		draw();
+	}
+
+	el.querySelector('.predict-btn').onclick = function () {
+		setUserInput(canvas);
+	}
+
+	const paths = [];
+
+	let path;
+	canvas.onmousedown = function (event) {
+		if (event.button === 0 && !path) {
+			path = [getPointer(event)];
+			paths.push(path);
+			draw();
+		}
+	}
+	window.addEventListener('mousemove', event => {
+		if (path) {
+			path.push(getPointer(event));
+			draw();
+		}
+	});
+	window.addEventListener('mouseup', event => {
+		if (event.button === 0) {
+			path = null;
+		}
+	});
+
+	function draw() {
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+		ctx.save();
+		ctx.scale2(window.devicePixelRatio)
+
+		ctx.filter = 'blur(2px)';
+		
+		ctx.beginPath();
+		for (const path of paths) {
+			ctx.moveTo(...path[0]);
+			ctx.lineTo(...path[0]);
+			for (let i = 1; i < path.length; i++) {
+				ctx.lineTo(...path[i])
+			}
+		}
+
+		ctx.lineWidth = 13;
+		ctx.strokeStyle = '#fff';
+		ctx.lineCap = ctx.lineJoin = 'round';
+		ctx.stroke();
+
+		ctx.restore();
+	}
+
+	function getPointer(event) {
+		const box = canvas.getBoundingClientRect();
+		return [
+			(event.clientX - box.x) / box.width * size, 
+			(event.clientY - box.y) / box.height * size
+		];
+	}
+
+	return el;
+}
+
+// stackoverflow moment :3
+function hsl2rgb(h,s,l) {
+	let a=s*Math.min(l,1-l);
+	let f= (n,k=(n+h/30)%12) => l - a*Math.max(Math.min(k-3,9-k,1),-1);
+	return [f(0)*255,f(8)*255,f(4)*255,255];
 }

@@ -343,15 +343,13 @@ function getAccuracy(targets, predictions) {
 	return correct / n;
 }
 
-function predict() {
-	const item = data[Math.floor(Math.random() * data.length)];
-	model.forward(item.x);
+function predict(x) {
+	model.forward(x);
 
 	postMessage({
 		id: 'prediction', 
 		modelId, 
-		x: item.x,
-		y: item.y,  
+		x, 
 		a1: model.a1, 
 		a2: model.a2
 	});
@@ -385,7 +383,8 @@ addEventListener('message', event => {
 			break;
 
 		case 'predict':
-			predict();
+			const x = msg.x || data[Math.floor(Math.random() * data.length)].x;
+			predict(x);
 			break;
 
 		default:
