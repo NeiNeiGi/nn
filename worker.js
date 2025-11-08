@@ -296,8 +296,6 @@ function train() {
 
 	const timeTaken = performance.now() - startTime;
 
-	console.log(`Train Loss: ${trainLoss}, Train Accuracy: ${(trainAccuracy * 100).toFixed(2)}%, Val Loss: ${valLoss}, Val Accuracy: ${(valAccuracy * 100).toFixed(2)}%, Time Taken: ${(timeTaken / 1000).toFixed(2)}s`);
-
 	postMessage({
 		id: 'epoch', 
 		modelId, 
@@ -355,6 +353,53 @@ function predict(x) {
 	});
 }
 
+function getLossCurve(f) {
+	let startParams = getLossCurve.params;
+	if (!startParams) {
+		startParams = getLossCurve.params = {
+			w1: createParams(model.w1.length), 
+			b1: createParams(model.b1.length), 
+			w2: createParams(model.w2.length), 
+			b2: createParams(model.b2.length)
+		};
+	}
+
+	const endParams = {
+		w1: model.w1, 
+		b1: model.b1, 
+		w2: model.w2, 
+		b2: model.b2
+	};
+
+	model.w1 = interpolateParams(startParams.w1, endParams.w1, f);
+	model.b1 = interpolateParams(startParams.b1, endParams.b1, f);
+	model.w2 = interpolateParams(startParams.w2, endParams.w2, f);
+	model.b2 = interpolateParams(startParams.b2, endParams.b2, f);
+
+	const [x, y] = datasets.val;
+	const preds = model.forward(x);
+	const loss = crossEntropy(y, preds);
+
+	model.w1 = endParams.w1;
+	model.b1 = endParams.b1;
+	model.w2 = endParams.w2;
+	model.b2 = endParams.b2;
+
+	postMessage({
+		id: 'lossCurve',
+		modelId, 
+		value: loss
+	});
+}	
+
+function interpolateParams(start, end, x) {
+	const p = new Float32Array(start.length);
+	for (let j = 0; j < start.length; j++) {
+		p[j] = start[j] * x + (1 - x) * end[j];
+	}
+	return p;
+}
+
 addEventListener('message', event => {
 	const msg = event.data;
 
@@ -385,6 +430,10 @@ addEventListener('message', event => {
 		case 'predict':
 			const x = msg.x || data[Math.floor(Math.random() * data.length)].x;
 			predict(x);
+			break;
+
+		case 'lossCurve':
+			getLossCurve(msg.x);
 			break;
 
 		default:

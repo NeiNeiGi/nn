@@ -18,6 +18,8 @@ let params;
 let prediction = null;
 let predicting = false;
 
+let lossCurving = false;
+
 function updateEpochProgress() {
 	progress = Math.min(1, epoch / epochs);
 	progressText = `training epoch ${epoch}/${epochs}`;
@@ -34,6 +36,8 @@ function reset() {
 
 	epoching = false;
 	params = null;
+
+	lossCurving = false;
 
 	createModel();
 }
@@ -66,6 +70,8 @@ worker.onmessage = function (event) {
 			if (msg.modelId !== modelId) break;
 			epoching = false;
 
+			console.log(`Epoch #${epoch}:\nTrain Loss: ${msg.trainLoss}, Train Accuracy: ${(msg.trainAccuracy * 100).toFixed(2)}%\nVal Loss: ${msg.valLoss}, Val Accuracy: ${(msg.valAccuracy * 100).toFixed(2)}%\nTime Taken: ${(msg.timeTaken / 1000).toFixed(2)}s`);
+
 			addGraph('trainLoss', msg.trainLoss);
 			addGraph('trainAccuracy', msg.trainAccuracy * 100);
 			addGraph('valLoss', msg.valLoss);
@@ -74,6 +80,9 @@ worker.onmessage = function (event) {
 
 			epoch++;
 			updateEpochProgress();
+
+			graphs.lossCurve.points.length = 0;
+			graphs.lossCurve.max = -Infinity;
 			break;
 
 		case 'params':
@@ -122,6 +131,12 @@ worker.onmessage = function (event) {
 			prediction = msg;
 
 			console.log(`prediction: ${maxIndex}, prob: ${maxA2}`);
+			break;
+
+		case 'lossCurve':
+			if (msg.modelId !== modelId) break;
+			lossCurving = false;
+			addGraph('lossCurve', msg.value);
 			break;
 
 		default:
@@ -195,7 +210,7 @@ let graphs;
 function initGraphs() {
 	graphs = {};
 
-	const list = ['trainLoss', 'trainAccuracy', 'valLoss', 'valAccuracy', 'epochTime'];
+	const list = ['trainLoss', 'trainAccuracy', 'valLoss', 'valAccuracy', 'epochTime', 'lossCurve'];
 
 	for (let i = 0; i < list.length; i++) {
 		const key = list[i];
@@ -203,7 +218,8 @@ function initGraphs() {
 			name: fromCamel(key), 
 			points: [], 
 			max: -Infinity,
-			i: 1 + i
+			i: 1 + i, 
+			visible: true
 		};
 	}
 }
@@ -231,6 +247,7 @@ const settings = {
 	trainingEnabled: true, 
 	endlessTraining: false, 
 	showLines: true, 
+	lossCurve: false, 
 	hiddenLayerSideLength: [hiddenLayerLength, 1, 10, 1], 
 	learningRate: [0.5, 0.01, 1, 0.01], 
 	trainSplit: [0.8, 0.01, 0.99, 0.01], 
@@ -296,6 +313,10 @@ for (const key in settings) {
 		settingsEl.appendChild(el);
 	}
 }
+
+const resetBtnEl = fromHtml(`<div class="btn reset-btn" style="margin-top: 3px;">restart</div>`);
+resetBtnEl.onclick = reset;
+settingsEl.appendChild(resetBtnEl);
 
 function fromCamel(text){
 	text = text.replace(/([A-Z])/g,' $1');
@@ -769,6 +790,8 @@ function update() {
 	settingsEl.style.transform = `translateY(${(1 - showT) * -200}%)`;
 	sketchEl.style.transform = `translateY(${(1 - showT) * 200}%)`;
 
+	graphs.lossCurve.visible = settings.lossCurve;
+
 	if (loaded) {
 		if (isTraining()) {
 			predictT = 0;
@@ -779,6 +802,14 @@ function update() {
 				});
 			}
 		} else if (!predicting) {
+			if (settings.lossCurve && !lossCurving && graphs.lossCurve.points.length <= 50) {
+				lossCurving = true;
+				worker.postMessage({
+					id: 'lossCurve', 
+					x: -0.25 + graphs.lossCurve.points.length / 50 * 1.25
+				});
+			}
+
 			if (predictT === 0) {
 				predicting = true;
 				worker.postMessage({
@@ -1063,6 +1094,7 @@ function drawHud(ctx) {
 
 	for (const key in graphs) {
 		const graph = graphs[key];
+		if (!graph.visible) continue;
 
 		ctx.save();
 		showT < 1 && ctx.translate(0, (1 - Math.pow(showT, graph.i)) * graphHeight * 4);
@@ -1093,7 +1125,7 @@ function drawHud(ctx) {
 		ctx.stroke();
 
 		ctx.fillStyle = '#888';
-		ctx.font = 'bolder 16px monospace';
+		ctx.font = 'normal 16px monospace';
 		ctx.textBaseline = 'bottom';
 		ctx.textAlign = 'right';
 		const n = graph.points.length > 0 ? graph.points[graph.points.length - 1] : 0;
@@ -1103,7 +1135,7 @@ function drawHud(ctx) {
 		ctx.font = 'normal 10px monospace';
 		ctx.textBaseline = 'top';
 		ctx.textAlign = 'left';
-		ctx.fillText(graph.name, 0, 6);
+		ctx.fillText(graph.name, 0, 7);
 
 		ctx.restore();
 
@@ -1140,6 +1172,10 @@ function drawHud(ctx) {
 	ctx.restore();
 
 	ctx.restore();
+}
+
+function drawGraph(ctx, graph, graphWidth, graphHeight, rightAlign) {
+	
 }
 
 function getHoverColor() {
@@ -1276,7 +1312,6 @@ function SketchUI() {
 		grid-gap: 5px;
 		pointer-events: all;
 	">
-		<div>draw a digit xp</div>
 		<div class="row">
 			<div class="btn predict-btn">predict</div>
 			<div class="btn clear-btn">clear</div>
@@ -1289,6 +1324,7 @@ function SketchUI() {
 			border: 2px solid hsla(0, 0%, 100%, 0.2);
 			pointer-events: all;
 		"></canvas>
+		<div>draw a digit xp</div>
 	</div>`);
 	uiEl.appendChild(el);
 
