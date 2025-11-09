@@ -353,37 +353,24 @@ function predict(x) {
 	});
 }
 
-function getLossCurve(f) {
-	let startParams = getLossCurve.params;
-	if (!startParams) {
-		startParams = getLossCurve.params = {
-			w1: createParams(model.w1.length), 
-			b1: createParams(model.b1.length), 
-			w2: createParams(model.w2.length), 
-			b2: createParams(model.b2.length)
-		};
+function getLossCurve(x) {
+	const startParams = getLossCurve.params || (getLossCurve.params = {});
+
+	const oldParams = {};
+
+	for (const key in model) {
+		const params = model[key];
+		oldParams[key] = params;
+		if (!startParams[key]) startParams[key] = createParams(params.length);
+		model[key] = interpolateParams(startParams[key], params, x);
 	}
 
-	const endParams = {
-		w1: model.w1, 
-		b1: model.b1, 
-		w2: model.w2, 
-		b2: model.b2
-	};
+	const preds = model.forward(datasets.val[0]);
+	const loss = crossEntropy(datasets.val[1], preds);
 
-	model.w1 = interpolateParams(startParams.w1, endParams.w1, f);
-	model.b1 = interpolateParams(startParams.b1, endParams.b1, f);
-	model.w2 = interpolateParams(startParams.w2, endParams.w2, f);
-	model.b2 = interpolateParams(startParams.b2, endParams.b2, f);
-
-	const [x, y] = datasets.val;
-	const preds = model.forward(x);
-	const loss = crossEntropy(y, preds);
-
-	model.w1 = endParams.w1;
-	model.b1 = endParams.b1;
-	model.w2 = endParams.w2;
-	model.b2 = endParams.b2;
+	for (const key in oldParams) {
+		model[key] = oldParams[key];
+	}
 
 	postMessage({
 		id: 'lossCurve',
@@ -398,6 +385,41 @@ function interpolateParams(start, end, x) {
 		p[j] = start[j] * x + (1 - x) * end[j];
 	}
 	return p;
+}
+
+function getLossPlane(x, y) {
+	const dirX = getLossPlane.dirX || (getLossPlane.dirX = {});
+	const dirY = getLossPlane.dirY || (getLossPlane.dirY = {});
+
+	const oldParams = {};
+
+	for (const key in model) {
+		const params = model[key];
+		oldParams[key] = params;
+
+		const dx = dirX[key] || (dirX[key] = createParams(params.length));
+		const dy = dirY[key] || (dirY[key] = createParams(params.length));
+
+		const newParams = new Float32Array(params.length);
+		for (let i = 0; i < params.length; i++) {
+			newParams[i] = params[i] + dx[i] * x + dy[i] * y;
+		}
+
+		model[key] = newParams;
+	}
+
+	const preds = model.forward(datasets.val[0]);
+	const loss = crossEntropy(datasets.val[1], preds);
+
+	for (const key in oldParams) {
+		model[key] = oldParams[key];
+	}
+
+	postMessage({
+		id: 'lossPlane',
+		modelId, 
+		value: loss
+	});
 }
 
 addEventListener('message', event => {
@@ -434,6 +456,10 @@ addEventListener('message', event => {
 
 		case 'lossCurve':
 			getLossCurve(msg.x);
+			break;
+
+		case 'lossPlane':
+			getLossPlane(msg.x, msg.y);
 			break;
 
 		default:

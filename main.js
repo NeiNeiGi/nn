@@ -12,13 +12,105 @@ let progress = 0;
 let progressText = 'starting';
 
 let epoch = 0;
-let epoching = false;
 let params;
+let prediction;
 
-let prediction = null;
+let epoching = false;
 let predicting = false;
-
 let lossCurving = false;
+let lossPlaning = false;
+
+let lossPlaneLength = 10;
+let lossPlaneSize = lossPlaneLength * lossPlaneLength;
+
+let lossPlane;
+const lossPlanePoints = [];
+
+function disposeLossPlane() {
+	if (lossPlane) {
+		gl.deleteBuffer(lossPlane.pointBuffer);
+		gl.deleteBuffer(lossPlane.posBuffer);
+		gl.deleteBuffer(lossPlane.intensityBuffer);
+		gl.deleteBuffer(lossPlane.lineBuffer);
+		lossPlane = null;
+	}
+}
+
+function updateLossPlane() {
+	disposeLossPlane();
+
+	const n = lossPlanePoints.length;
+	if (n <= 0) return;
+
+	let min = Infinity;
+	let max = -Infinity;
+	for (const loss of lossPlanePoints) {
+		min = Math.min(loss, min);
+		max = Math.max(loss, max);
+	}
+
+	const points = [];
+	const pointData = new Float32Array(n * 3);
+
+	for (let i = 0; i < lossPlanePoints.length; i++) {
+		const f = (lossPlanePoints[i] - min) / (max - min);
+		const p = [
+			((i % lossPlaneLength) / (lossPlaneLength - 1) * 2 - 1) * 120, 
+			-400 - 40 + f * 60, 
+			(Math.floor(i / lossPlaneLength) / (lossPlaneLength - 2) * 2 - 1) * 120
+		];
+		p.f = f;
+		pointData.set(p, i * 3);
+		points.push(p);
+	}
+
+	const posData = [];
+	const intensityData = [];
+	const lineData = [];
+
+	const h = Math.floor(n / lossPlaneLength) - 1;
+	
+	for (let i = 0, l = Math.min(points.length, lossPlaneLength) - 1; i < l; i++) {
+		lineData.push(...points[i], ...points[i + 1]);
+	}
+
+	for (let y = 0; y <= h; y++) {
+		const w = (y < h ? lossPlaneLength : n % lossPlaneLength) - 2;
+		for (let x = 0; x <= w; x++) {
+			const a = points[y * lossPlaneLength + x];
+			const b = points[y * lossPlaneLength + x + 1];
+			const c = points[(y + 1) * lossPlaneLength + x];
+			const d = points[(y + 1) * lossPlaneLength + x + 1];
+
+			y > 0 && a && b && lineData.push(...a, ...b);
+			a && c && lineData.push(...a, ...c);
+			x === w && b && d && lineData.push(...b, ...d);
+			y >= h - 1 && c && d && lineData.push(...c, ...d);
+
+			if (a && b && c && d) {
+				posData.push(
+					...b, ...a, ...c,
+					...b, ...c, ...d
+				);
+				
+				intensityData.push(
+					b.f, a.f, c.f, 
+					b.f, c.f, d.f
+				);
+			}
+		}
+	}
+
+	lossPlane = {
+		points, 
+		pointBuffer: createBuffer(pointData), 
+		posBuffer: createBuffer(new Float32Array(posData)), 
+		intensityBuffer: createBuffer(new Float32Array(intensityData)), 
+		vertexCount: posData.length / 3, 
+		lineBuffer: createBuffer(new Float32Array(lineData)), 
+		lineCount: lineData.length / 3
+	};
+}
 
 function updateEpochProgress() {
 	progress = Math.min(1, epoch / epochs);
@@ -30,14 +122,17 @@ function reset() {
 	updateEpochProgress();
 	resetGraphs();
 
-	prediction = null;
-	predicting = false;
-	predictT = 0;
+	lossPlanePoints.length = 0;
+	disposeLossPlane();
 
-	epoching = false;
+	predictT = 0;
+	prediction = null;
 	params = null;
 
+	epoching = false;
+	predicting = false;
 	lossCurving = false;
+	lossPlaning = false;
 
 	createModel();
 }
@@ -83,6 +178,9 @@ worker.onmessage = function (event) {
 
 			graphs.lossCurve.points.length = 0;
 			graphs.lossCurve.max = -Infinity;
+
+			lossPlanePoints.length = 0;
+			disposeLossPlane();
 			break;
 
 		case 'params':
@@ -137,6 +235,13 @@ worker.onmessage = function (event) {
 			if (msg.modelId !== modelId) break;
 			lossCurving = false;
 			addGraph('lossCurve', msg.value);
+			break;
+
+		case 'lossPlane': 
+			if (msg.modelId !== modelId) break;
+			lossPlaning = false;
+			lossPlanePoints.push(isFinite(msg.value) ? msg.value : 0);
+			updateLossPlane();
 			break;
 
 		default:
@@ -225,6 +330,7 @@ function initGraphs() {
 }
 
 function addGraph(name, y) {
+	if (!isFinite(y)) y = 0;
 	const graph = graphs[name];
 	graph.points.push(y);
 	graph.max = Math.max(graph.max, y);
@@ -496,6 +602,59 @@ void main() {
 
 `);
 
+const planeProgram = createProgram(`
+
+precision mediump float;
+
+attribute vec3 position;
+attribute float intensity;
+
+uniform mat4 projectionMatrix;
+uniform mat4 viewMatrix;
+
+varying float vIntensity;
+
+void main() {
+	gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
+	vIntensity = intensity;
+}
+
+`, `
+
+precision mediump float;
+
+varying float vIntensity;
+
+void main() {
+	gl_FragColor = vec4(mix(vec3(0.01, 0.66, 0.95), vec3(0.54, 0.81, 0.22), vIntensity), 1.0);
+}
+
+`);
+
+const planeLineProgram = createProgram(`
+
+precision mediump float;
+
+attribute vec3 position;
+
+uniform mat4 projectionMatrix;
+uniform mat4 viewMatrix;
+
+void main() {
+	gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
+	gl_Position.z -= 0.02;
+}
+
+`, `
+
+precision mediump float;
+	
+void main() {
+	gl_FragColor = vec4(0.5);
+}
+
+`);
+
 const map = gl.createTexture();
 gl.activeTexture(gl.TEXTURE0);
 gl.bindTexture(gl.TEXTURE_2D, map);
@@ -641,12 +800,14 @@ let ry = -0.5;
 let depth = 120;
 
 const minDepth = 2;
-const maxDepth = 250;
+const maxDepth = 300;
 
 canvas.onwheel = function (event) {
 	nDepth *= (event.deltaY > 0 ? 1.1 : 0.9);
 	nDepth = Math.max(minDepth, Math.min(nDepth, maxDepth));
 }
+
+canvas.oncontextmenu = () => false;
 
 let picked;
 
@@ -683,7 +844,7 @@ function pick() {
 
 	const W = window.innerWidth;
 	const H = window.innerHeight;
-	const r = getWorldSpaceSize() * H + 10;
+	const r = getScreenSpaceSize() * H + 10;
 
 	for (let y1 = 0; y1 < hiddenLayerLength; y1++) {
 		for (let x1 = 0; x1 < hiddenLayerLength; x1++) {
@@ -763,6 +924,8 @@ const sketchEl = SketchUI();
 let predictT = 0;
 
 let projectionMatrix, viewMatrix;
+let eyeY = 0;
+let showingLossCurve = false;
 
 let now = 0;
 let lastTime = Date.now();
@@ -784,13 +947,15 @@ function update() {
 	ry = lerpAngle(ry, nry, lf);
 	depth = lerp(depth, nDepth, lf);
 
+	showingLossCurve = settings.lossCurve && lossPlane && !isTraining();
+	eyeY = lerp(eyeY, showingLossCurve ? 400 : 0, lf);
+	graphs.lossCurve.visible = showingLossCurve;
+
 	lf = getLerpFactor(0.1);
 	showT = lerp(showT, 1, lf);
 	headerEl.style.transform = `translateX(${(1 - showT) * 200}%)`;
 	settingsEl.style.transform = `translateY(${(1 - showT) * -200}%)`;
 	sketchEl.style.transform = `translateY(${(1 - showT) * 200}%)`;
-
-	graphs.lossCurve.visible = settings.lossCurve;
 
 	if (loaded) {
 		if (isTraining()) {
@@ -802,12 +967,25 @@ function update() {
 				});
 			}
 		} else if (!predicting) {
-			if (settings.lossCurve && !lossCurving && graphs.lossCurve.points.length <= 50) {
-				lossCurving = true;
-				worker.postMessage({
-					id: 'lossCurve', 
-					x: -0.25 + graphs.lossCurve.points.length / 50 * 1.25
-				});
+			if (settings.lossCurve) {
+				if (!lossCurving && graphs.lossCurve.points.length <= 15) {
+					lossCurving = true;
+					worker.postMessage({
+						id: 'lossCurve', 
+						x: -0.25 + graphs.lossCurve.points.length / 15 * 1.25
+					});
+				}
+
+				if (!lossPlaning && lossPlanePoints.length < lossPlaneSize) {
+					lossPlaning = true;
+
+					const i = lossPlanePoints.length;
+					worker.postMessage({
+						id: 'lossPlane', 
+						x: ((i % lossPlaneLength) / lossPlaneLength * 2 - 1) * 1.1, 
+						y: (Math.floor(i / lossPlaneLength) / lossPlaneLength * 2 - 1) * 1.1
+					});
+				}
 			}
 
 			if (predictT === 0) {
@@ -841,6 +1019,10 @@ function render() {
 		0, 0, -depth, 1
 	];
 
+	viewMatrix[12] += eyeY * viewMatrix[4];
+	viewMatrix[13] += eyeY * viewMatrix[5];
+	viewMatrix[14] += eyeY * viewMatrix[6];
+
 	const near = 0.1;
 	const far = 1000;
 	const fov = 60;
@@ -865,6 +1047,7 @@ function render() {
 	renderBg();
 	renderBoxes();
 	settings.showLines && renderLines();
+	showingLossCurve && renderLossPlane();
 }
 
 function renderBg() {
@@ -974,6 +1157,45 @@ function renderLines() {
 	gl.disableVertexAttribArray(program.attributes.alpha);
 }
 
+function renderLossPlane() {
+	if (lossPlane.vertexCount > 0) {
+		gl.useProgram(planeProgram);
+
+		gl.uniformMatrix4fv(planeProgram.uniforms.projectionMatrix, false, projectionMatrix);
+		gl.uniformMatrix4fv(planeProgram.uniforms.viewMatrix, false, viewMatrix);
+
+		gl.bindBuffer(gl.ARRAY_BUFFER, lossPlane.posBuffer);
+		gl.enableVertexAttribArray(planeProgram.attributes.position);
+		gl.vertexAttribPointer(planeProgram.attributes.position, 3, gl.FLOAT, false, 0, 0);
+
+		gl.bindBuffer(gl.ARRAY_BUFFER, lossPlane.intensityBuffer);
+		gl.enableVertexAttribArray(planeProgram.attributes.intensity);
+		gl.vertexAttribPointer(planeProgram.attributes.intensity, 1, gl.FLOAT, false, 0, 0);
+
+		gl.disable(gl.CULL_FACE);
+		gl.drawArrays(gl.TRIANGLES, 0, lossPlane.vertexCount);
+		gl.enable(gl.CULL_FACE);
+
+		gl.disableVertexAttribArray(planeProgram.attributes.position);
+		gl.disableVertexAttribArray(planeProgram.attributes.intensity);
+	}
+
+	// 
+
+	gl.useProgram(planeLineProgram);
+
+	gl.uniformMatrix4fv(planeLineProgram.uniforms.projectionMatrix, false, projectionMatrix);
+	gl.uniformMatrix4fv(planeLineProgram.uniforms.viewMatrix, false, viewMatrix);
+
+	gl.bindBuffer(gl.ARRAY_BUFFER, lossPlane.lineBuffer);
+	gl.enableVertexAttribArray(planeLineProgram.attributes.position);
+	gl.vertexAttribPointer(planeLineProgram.attributes.position, 3, gl.FLOAT, false, 0, 0);
+
+	gl.drawArrays(gl.LINES, 0, lossPlane.lineCount);
+
+	gl.disableVertexAttribArray(planeLineProgram.attributes.position);
+}
+
 function drawHud(ctx) {
 	const canvas = ctx.canvas;
 	const scale = Math.max(canvas.width / 1366, canvas.height / 768);
@@ -993,7 +1215,7 @@ function drawHud(ctx) {
 	ctx.textAlign = 'center';
 	ctx.fillStyle = colors.activation;
 
-	const r = getWorldSpaceSize() * H;
+	const r = getScreenSpaceSize() * H;
 	const offset = r + 10;
 
 	if (prediction && predictT > 0.5 && depth < 100) {
@@ -1077,14 +1299,56 @@ function drawHud(ctx) {
 		}
 	}
 
+	if (showingLossCurve) {
+		ctx.fillStyle = colors.prob;
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'bottom';
+
+		for (let i = 0; i < lossPlane.points.length; i++) {
+			const loss = lossPlanePoints[i];
+			const [x, y, z] = project(...lossPlane.points[i]);
+			if (inView(x, y, z)) {
+				ctx.fillText(loss.toFixed(2), x * W, y * H);
+			}
+		}
+	}
+
 	if (666) {
 		const [x, y, z] = project(69, 699, 420);
 		if (inView(x, y, z)) {
-			ctx.font = 'bolder 10px monospace';
+			ctx.save();
+			ctx.translate(x * W, y * H);
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.font = 'bolder 50px monospace';
+			ctx.fillStyle = 'brown';
+			ctx.fillText('⛧OD⛧', 0, 4);
+
+			ctx.beginPath();
+			ctx.moveTo(-60, -20);
+			ctx.lineTo(60, 20);
+			ctx.moveTo(60, -20);
+			ctx.lineTo(-60, 20);
+			ctx.strokeStyle = 'red';
+			ctx.lineWidth = 5;
+			ctx.stroke();
+
+			ctx.font = 'normal 10px monospace';
 			ctx.fillStyle = getHoverColor();
-			ctx.fillText('⛧6⛧6⛧6⛧', x * W, y * H);
+			ctx.fillText('⛧6⛧6⛧6⛧', 0, 0);
+
+			if (hiddenLayerSize === 1) {
+				ctx.fillStyle = 'white';
+				ctx.textBaseline = 'top';
+				ctx.fillText(`▲f: dats ur brain u dum p of poo xp`, 0, 28);
+				ctx.fillText(`z: so tru bbg :3`, 0, 28 + 13);
+			}
+
+			ctx.restore();
 		} 
 	}
+
+	//
 
 	ctx.save();
 	ctx.translate(12, H - 12 - 16);
@@ -1105,9 +1369,10 @@ function drawHud(ctx) {
 			y = -graphHeight;
 			ctx.lineTo(0, y);
 		} else {
+			const l = Math.max(1, graph.points.length - 1);
 			for (let i = 0; i < graph.points.length; i++) {
 				const v = graph.points[i];
-				const x = i / graph.points.length * graphWidth;
+				const x = i / l * graphWidth;
 				y = -v / graph.max * graphHeight;
 				ctx.lineTo(x, y);
 			}
@@ -1144,6 +1409,8 @@ function drawHud(ctx) {
 
 	ctx.restore();
 
+	//
+
 	ctx.save();
 	ctx.translate(-400 * (1 - showT), H - 130);
 
@@ -1174,16 +1441,12 @@ function drawHud(ctx) {
 	ctx.restore();
 }
 
-function drawGraph(ctx, graph, graphWidth, graphHeight, rightAlign) {
-	
-}
-
 function getHoverColor() {
 	return `hsl(${(now / 400 % 1) * 360}deg, 100%, 70%)`;
 }
 
-function getWorldSpaceSize() {
-	return Math.abs(project(0, 1, 0)[1] - 0.5);
+function getScreenSpaceSize() {
+	return Math.abs(project(0, 1, 0)[1] - project(0, 0, 0)[1]);
 }
 
 function animate() {
