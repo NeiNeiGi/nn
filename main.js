@@ -7,6 +7,13 @@ let hiddenLayerSize = hiddenLayerLength * hiddenLayerLength;
 
 const epochs = 100;
 
+const lossCurveLength = 50;
+const lossLandscapeLength = 15;
+const lossLandscapeSize = lossLandscapeLength * lossLandscapeLength;
+
+const lossCurveRange = [-2, 10];
+const lossLandscapeRange = [-5, 5];
+
 let showT = 0;
 let progress = 0;
 let progressText = 'starting';
@@ -19,9 +26,6 @@ let epoching = false;
 let predicting = false;
 let lossCurving = false;
 let lossPlaning = false;
-
-let lossLandscapeLength = 10;
-let lossLandscapeSize = lossLandscapeLength * lossLandscapeLength;
 
 let lossLandscape;
 const lossLandscapePoints = [];
@@ -45,9 +49,9 @@ function updateLossLandscape() {
 	for (let i = 0; i < lossLandscapePoints.length; i++) {
 		const f = (lossLandscapePoints[i] - min) / (max - min);
 		const p = [
-			((i % lossLandscapeLength) / (lossLandscapeLength - 1) * 2 - 1) * 120, 
+			((i % lossLandscapeLength) / (lossLandscapeLength - 1) * 2 - 1) * 150, 
 			-400 - 40 + f * 60, 
-			(Math.floor(i / lossLandscapeLength) / (lossLandscapeLength - 2) * 2 - 1) * 120
+			(Math.floor(i / lossLandscapeLength) / (lossLandscapeLength - 2) * 2 - 1) * 150
 		];
 		p.f = f;
 		pointData.set(p, i * 3);
@@ -239,7 +243,7 @@ worker.onmessage = function (event) {
 		case 'lossLandscape': 
 			if (msg.modelId !== modelId) break;
 			lossPlaning = false;
-			lossLandscapePoints.push(isFinite(msg.value) ? msg.value : 0);
+			lossLandscapePoints.push(msg.value);
 			updateLossLandscape();
 			break;
 
@@ -497,7 +501,7 @@ gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
 const program = createProgram(`
 
-precision mediump float;
+precision highp float;
 
 attribute vec3 position;
 attribute vec3 normal;
@@ -522,7 +526,7 @@ void main() {
 
 `, `
 
-precision mediump float;
+precision highp float;
 
 varying vec3 vColor;
 
@@ -536,7 +540,7 @@ const lineGlowSize = 0.1;
 
 const lineProgram = createProgram(`
 
-precision mediump float;
+precision highp float;
 
 attribute vec3 position;
 attribute vec2 distanceAndAlpha;
@@ -553,7 +557,7 @@ void main() {
 
 `, `
 
-precision mediump float;
+precision highp float;
 
 varying vec2 vDistanceAndAlpha;
 
@@ -570,7 +574,7 @@ void main() {
 
 const bgProgram = createProgram(`
 
-precision mediump float;
+precision highp float;
 
 attribute vec3 position;
 
@@ -587,7 +591,7 @@ void main() {
 
 `, `
 
-precision mediump float;
+precision highp float;
 
 uniform sampler2D map;
 
@@ -603,7 +607,7 @@ void main() {
 
 const planeProgram = createProgram(`
 
-precision mediump float;
+precision highp float;
 
 attribute vec3 position;
 attribute float intensity;
@@ -620,7 +624,7 @@ void main() {
 
 `, `
 
-precision mediump float;
+precision highp float;
 
 varying float vIntensity;
 
@@ -632,7 +636,7 @@ void main() {
 
 const planeLineProgram = createProgram(`
 
-precision mediump float;
+precision highp float;
 
 attribute vec3 position;
 
@@ -646,7 +650,7 @@ void main() {
 
 `, `
 
-precision mediump float;
+precision highp float;
 	
 void main() {
 	gl_FragColor = vec4(0.5);
@@ -976,11 +980,11 @@ function update() {
 			}
 		} else if (!predicting) {
 			if (settings.lossLandscape) {
-				if (!lossCurving && graphs.lossCurve.points.length <= 15) {
+				if (!lossCurving && graphs.lossCurve.points.length <= lossCurveLength) {
 					lossCurving = true;
 					worker.postMessage({
 						id: 'lossCurve', 
-						x: -0.25 + graphs.lossCurve.points.length / 15 * 1.25
+						x: toRange(lossCurveRange, graphs.lossCurve.points.length / lossCurveLength)
 					});
 				}
 
@@ -990,8 +994,8 @@ function update() {
 					const i = lossLandscapePoints.length;
 					worker.postMessage({
 						id: 'lossLandscape', 
-						x: ((i % lossLandscapeLength) / lossLandscapeLength * 2 - 1) * 1.1, 
-						y: (Math.floor(i / lossLandscapeLength) / lossLandscapeLength * 2 - 1) * 1.1
+						x: toRange(lossLandscapeRange, (i % lossLandscapeLength) / lossLandscapeLength), 
+						y: toRange(lossLandscapeRange, Math.floor(i / lossLandscapeLength) / lossLandscapeLength)
 					});
 				}
 			}
@@ -1012,6 +1016,10 @@ function update() {
 			}
 		}
 	}
+}
+
+function toRange([min, max], f) {
+	return min + (max - min) * f;
 }
 
 function render() {

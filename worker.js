@@ -173,7 +173,9 @@ function crossEntropy(targets, predictions) {
 	
 	let sum = 0;
 	for (let i = 0; i < targets.length; i++) {
-		sum += targets[i] * -Math.log(predictions[i] + 1e-12);
+		let p = -Math.log(predictions[i] + 1e-12);
+		!isFinite(p) && (p = 1);
+		sum += targets[i] * p;
 	}
 
 	return sum / n;
