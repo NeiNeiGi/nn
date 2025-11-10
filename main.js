@@ -20,31 +20,21 @@ let predicting = false;
 let lossCurving = false;
 let lossPlaning = false;
 
-let lossPlaneLength = 10;
-let lossPlaneSize = lossPlaneLength * lossPlaneLength;
+let lossLandscapeLength = 10;
+let lossLandscapeSize = lossLandscapeLength * lossLandscapeLength;
 
-let lossPlane;
-const lossPlanePoints = [];
+let lossLandscape;
+const lossLandscapePoints = [];
 
-function disposeLossPlane() {
-	if (lossPlane) {
-		gl.deleteBuffer(lossPlane.pointBuffer);
-		gl.deleteBuffer(lossPlane.posBuffer);
-		gl.deleteBuffer(lossPlane.intensityBuffer);
-		gl.deleteBuffer(lossPlane.lineBuffer);
-		lossPlane = null;
-	}
-}
+function updateLossLandscape() {
+	disposeLossLandscape();
 
-function updateLossPlane() {
-	disposeLossPlane();
-
-	const n = lossPlanePoints.length;
+	const n = lossLandscapePoints.length;
 	if (n <= 0) return;
 
 	let min = Infinity;
 	let max = -Infinity;
-	for (const loss of lossPlanePoints) {
+	for (const loss of lossLandscapePoints) {
 		min = Math.min(loss, min);
 		max = Math.max(loss, max);
 	}
@@ -52,12 +42,12 @@ function updateLossPlane() {
 	const points = [];
 	const pointData = new Float32Array(n * 3);
 
-	for (let i = 0; i < lossPlanePoints.length; i++) {
-		const f = (lossPlanePoints[i] - min) / (max - min);
+	for (let i = 0; i < lossLandscapePoints.length; i++) {
+		const f = (lossLandscapePoints[i] - min) / (max - min);
 		const p = [
-			((i % lossPlaneLength) / (lossPlaneLength - 1) * 2 - 1) * 120, 
+			((i % lossLandscapeLength) / (lossLandscapeLength - 1) * 2 - 1) * 120, 
 			-400 - 40 + f * 60, 
-			(Math.floor(i / lossPlaneLength) / (lossPlaneLength - 2) * 2 - 1) * 120
+			(Math.floor(i / lossLandscapeLength) / (lossLandscapeLength - 2) * 2 - 1) * 120
 		];
 		p.f = f;
 		pointData.set(p, i * 3);
@@ -68,19 +58,19 @@ function updateLossPlane() {
 	const intensityData = [];
 	const lineData = [];
 
-	const h = Math.floor(n / lossPlaneLength) - 1;
+	const h = Math.floor(n / lossLandscapeLength) - 1;
 	
-	for (let i = 0, l = Math.min(points.length, lossPlaneLength) - 1; i < l; i++) {
+	for (let i = 0, l = Math.min(points.length, lossLandscapeLength) - 1; i < l; i++) {
 		lineData.push(...points[i], ...points[i + 1]);
 	}
 
 	for (let y = 0; y <= h; y++) {
-		const w = (y < h ? lossPlaneLength : n % lossPlaneLength) - 2;
+		const w = (y < h ? lossLandscapeLength : n % lossLandscapeLength) - 2;
 		for (let x = 0; x <= w; x++) {
-			const a = points[y * lossPlaneLength + x];
-			const b = points[y * lossPlaneLength + x + 1];
-			const c = points[(y + 1) * lossPlaneLength + x];
-			const d = points[(y + 1) * lossPlaneLength + x + 1];
+			const a = points[y * lossLandscapeLength + x];
+			const b = points[y * lossLandscapeLength + x + 1];
+			const c = points[(y + 1) * lossLandscapeLength + x];
+			const d = points[(y + 1) * lossLandscapeLength + x + 1];
 
 			y > 0 && a && b && lineData.push(...a, ...b);
 			a && c && lineData.push(...a, ...c);
@@ -92,7 +82,6 @@ function updateLossPlane() {
 					...b, ...a, ...c,
 					...b, ...c, ...d
 				);
-				
 				intensityData.push(
 					b.f, a.f, c.f, 
 					b.f, c.f, d.f
@@ -101,7 +90,7 @@ function updateLossPlane() {
 		}
 	}
 
-	lossPlane = {
+	lossLandscape = {
 		points, 
 		pointBuffer: createBuffer(pointData), 
 		posBuffer: createBuffer(new Float32Array(posData)), 
@@ -110,6 +99,16 @@ function updateLossPlane() {
 		lineBuffer: createBuffer(new Float32Array(lineData)), 
 		lineCount: lineData.length / 3
 	};
+}
+
+function disposeLossLandscape() {
+	if (lossLandscape) {
+		gl.deleteBuffer(lossLandscape.pointBuffer);
+		gl.deleteBuffer(lossLandscape.posBuffer);
+		gl.deleteBuffer(lossLandscape.intensityBuffer);
+		gl.deleteBuffer(lossLandscape.lineBuffer);
+		lossLandscape = null;
+	}
 }
 
 function updateEpochProgress() {
@@ -122,8 +121,8 @@ function reset() {
 	updateEpochProgress();
 	resetGraphs();
 
-	lossPlanePoints.length = 0;
-	disposeLossPlane();
+	lossLandscapePoints.length = 0;
+	disposeLossLandscape();
 
 	predictT = 0;
 	prediction = null;
@@ -179,8 +178,8 @@ worker.onmessage = function (event) {
 			graphs.lossCurve.points.length = 0;
 			graphs.lossCurve.max = -Infinity;
 
-			lossPlanePoints.length = 0;
-			disposeLossPlane();
+			lossLandscapePoints.length = 0;
+			disposeLossLandscape();
 			break;
 
 		case 'params':
@@ -237,11 +236,11 @@ worker.onmessage = function (event) {
 			addGraph('lossCurve', msg.value);
 			break;
 
-		case 'lossPlane': 
+		case 'lossLandscape': 
 			if (msg.modelId !== modelId) break;
 			lossPlaning = false;
-			lossPlanePoints.push(isFinite(msg.value) ? msg.value : 0);
-			updateLossPlane();
+			lossLandscapePoints.push(isFinite(msg.value) ? msg.value : 0);
+			updateLossLandscape();
 			break;
 
 		default:
@@ -269,7 +268,7 @@ function setLearningRate() {
 }
 
 function createDataset() {
-	worker.postMessage({
+	loaded && worker.postMessage({
 		id: 'createDataset', 
 		trainSplit: settings.trainSplit, 
 		dataSplit: settings.dataSplit
@@ -353,7 +352,7 @@ const settings = {
 	trainingEnabled: true, 
 	endlessTraining: false, 
 	showLines: true, 
-	lossCurve: false, 
+	lossLandscape: false, 
 	hiddenLayerSideLength: [hiddenLayerLength, 1, 10, 1], 
 	learningRate: [0.5, 0.01, 1, 0.01], 
 	trainSplit: [0.8, 0.01, 0.99, 0.01], 
@@ -672,7 +671,7 @@ const indexBuffer = gl.createBuffer();
 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
 gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(mesh.indices), gl.STATIC_DRAW);
 
-const gap = 2.5;
+const gap = 4.666;
 
 let objectCount,
 	worldPosData, 
@@ -689,6 +688,10 @@ let worldPosBuffer,
 
 let linePosBuffer, 
 	lineDistanceAndAlphaBuffer;
+
+let inputLayerPositions,
+	hiddenLayerPositions, 
+	outputLayerPositions;
 
 function initObjects() {
 	if (worldPosBuffer) {
@@ -721,59 +724,75 @@ function initObjects() {
 		lineDistanceAndAlphaData[i * 2 + 1] = 1;
 	}
 
+	inputLayerPositions = [];
+	hiddenLayerPositions = [];
+	outputLayerPositions = [];
+
 	let bi = 0;
 
 	for (let y = 0; y < inputLayerLength; y++) {
 		for (let x = 0; x < inputLayerLength; x++) {
-			worldPosData[bi++] = getCoord(x, inputLayerLength);
-			worldPosData[bi++] = -getCoord(y, inputLayerLength);
-			worldPosData[bi++] = -50;
+			const p = [
+				getCoord(x, inputLayerLength), 
+				-getCoord(y, inputLayerLength), 
+				-100
+			];
+			inputLayerPositions.push(p);
+			worldPosData.set(p, bi); bi += 3;
 		}
 	}
 
 	for (let y = 0; y < hiddenLayerLength; y++) {
 		for (let x = 0; x < hiddenLayerLength; x++) {
-			worldPosData[bi++] = getCoord(x, hiddenLayerLength);
-			worldPosData[bi++] = -getCoord(y, hiddenLayerLength);
-			worldPosData[bi++] = 0;
+			const p = [
+				getCoord(x, hiddenLayerLength), 
+				-getCoord(y, hiddenLayerLength), 
+				0
+			];
+			hiddenLayerPositions.push(p);
+			worldPosData.set(p, bi); bi += 3;
 		}
 	}
 
 	for (let y = 0; y < outputLayerSize; y++) {
-		worldPosData[bi++] = 0;
-		worldPosData[bi++] = -getCoord(y, outputLayerSize);
-		worldPosData[bi++] = 50;
+		const p = [
+			0, 
+			-getCoord(y, outputLayerSize), 
+			100
+		];
+		outputLayerPositions.push(p);
+		worldPosData.set(p, bi); bi += 3;
 	}
 
 	let li = 0;
 
-	for (let y1 = 0; y1 < hiddenLayerLength; y1++) {
-		for (let x1 = 0; x1 < hiddenLayerLength; x1++) {
-			for (let y0 = 0; y0 < inputLayerLength; y0++) {
-				for (let x0 = 0; x0 < inputLayerLength; x0++) {
-					linePosData[li++] = getCoord(x0, inputLayerLength);
-					linePosData[li++] = -getCoord(y0, inputLayerLength);
-					linePosData[li++] = -50 + 0.5;
+	for (let i = 0; i < hiddenLayerSize; i++) {
+		for (let j = 0; j < inputLayerSize; j++) {
+			const a = inputLayerPositions[j];
+			const b = hiddenLayerPositions[i];
 
-					linePosData[li++] = getCoord(x1, hiddenLayerLength); 
-					linePosData[li++] = -getCoord(y1, hiddenLayerLength);
-					linePosData[li++] = -0.5;
-				}
-			}
+			linePosData[li++] = a[0];
+			linePosData[li++] = a[1];
+			linePosData[li++] = a[2] + 0.5;
+
+			linePosData[li++] = b[0];
+			linePosData[li++] = b[1];
+			linePosData[li++] = b[2] - 0.5;
 		}
 	}
 
-	for (let y1 = 0; y1 < outputLayerSize; y1++) {
-		for (let y0 = 0; y0 < hiddenLayerLength; y0++) {
-			for (let x0 = 0; x0 < hiddenLayerLength; x0++) {
-				linePosData[li++] = getCoord(x0, hiddenLayerLength);
-				linePosData[li++] = -getCoord(y0, hiddenLayerLength);
-				linePosData[li++] = 0.5;
+	for (let i = 0; i < outputLayerSize; i++) {
+		for (let j = 0; j < hiddenLayerSize; j++) {
+			const a = hiddenLayerPositions[j];
+			const b = outputLayerPositions[i];
 
-				linePosData[li++] = 0;
-				linePosData[li++] = -getCoord(y1, outputLayerSize);
-				linePosData[li++] = 50 - 0.5;
-			}
+			linePosData[li++] = a[0];
+			linePosData[li++] = a[1];
+			linePosData[li++] = a[2] + 0.5;
+
+			linePosData[li++] = b[0];
+			linePosData[li++] = b[1];
+			linePosData[li++] = b[2] - 0.5;
 		}
 	}
 
@@ -786,7 +805,7 @@ function initObjects() {
 }
 
 function getCoord(x, n) {
-	return (x / Math.max(1, n - 1) * 2 - 1) * n * gap;
+	return n > 1 ? (x / (n - 1) * 2 - 1) * n * gap : 0;
 }
 
 initObjects();
@@ -837,8 +856,6 @@ window.onmouseup = function (event) {
 }
 
 function pick() {
-	picked = null;
-
 	const px = event.clientX;
 	const py = event.clientY;
 
@@ -846,43 +863,34 @@ function pick() {
 	const H = window.innerHeight;
 	const r = getScreenSpaceSize() * H + 10;
 
-	for (let y1 = 0; y1 < hiddenLayerLength; y1++) {
-		for (let x1 = 0; x1 < hiddenLayerLength; x1++) {
-			const pos = [
-				getCoord(x1, hiddenLayerLength), 
-				-getCoord(y1, hiddenLayerLength), 
-				0
-			];
-			const [x, y, z] = project(...pos);
+	for (let i = 0; i < hiddenLayerSize; i++) {
+		const pos = hiddenLayerPositions[i];
+		const p = project2(...pos);
+		
+		if (p && Math.hypot(px - p[0] * W, py - p[1] * H) < r) {
+			const x = i % hiddenLayerLength;
+			const y = Math.floor(i / hiddenLayerLength);
 
-			if (inView(x, y, z) && Math.hypot(px - x * W, py - y * H) < r) {
-				const start = inputLayerSize * (y1 * hiddenLayerLength + x1);
-
-				return {
-					name: `HiddenLayer (${x1 + 1}, ${y1 + 1})`, 
-					image: createImage(
-						params.w1.slice(start, start + inputLayerSize), 
-						inputLayerLength
-					), 
-					pos
-				};
-			}
+			return {
+				name: `HiddenLayer (${x + 1}, ${y + 1})`, 
+				image: createImage(
+					params.w1.slice(i * inputLayerSize, (i + 1) * inputLayerSize), 
+					inputLayerLength
+				), 
+				pos
+			};
 		}
 	}
 
-	for (let y1 = 0; y1 < outputLayerSize; y1++) {
-		const pos = [
-			0, 
-			-getCoord(y1, outputLayerSize), 
-			50
-		];
-		const [x, y, z] = project(...pos);
+	for (let i = 0; i < outputLayerSize; i++) {
+		const pos = outputLayerPositions[i];
+		const p = project2(...pos);
 
-		if (inView(x, y, z) && Math.hypot(px - x * W, py - y * H) < r) {
+		if (p && Math.hypot(px - p[0] * W, py - p[1] * H) < r) {
 			return {
-				name: `OutputLayer (1, ${y1 + 1})`, 
+				name: `OutputLayer (1, ${i + 1})`, 
 				image: createImage(
-					params.w2.slice(y1 * hiddenLayerSize, (y1 + 1) * hiddenLayerSize), 
+					params.w2.slice(i * hiddenLayerSize, (i + 1) * hiddenLayerSize), 
 					hiddenLayerLength
 				), 
 				pos
@@ -925,7 +933,7 @@ let predictT = 0;
 
 let projectionMatrix, viewMatrix;
 let eyeY = 0;
-let showingLossCurve = false;
+let showingLossLandscape = false;
 
 let now = 0;
 let lastTime = Date.now();
@@ -947,9 +955,9 @@ function update() {
 	ry = lerpAngle(ry, nry, lf);
 	depth = lerp(depth, nDepth, lf);
 
-	showingLossCurve = settings.lossCurve && lossPlane && !isTraining();
-	eyeY = lerp(eyeY, showingLossCurve ? 400 : 0, lf);
-	graphs.lossCurve.visible = showingLossCurve;
+	showingLossLandscape = settings.lossLandscape && lossLandscape && !isTraining();
+	eyeY = lerp(eyeY, showingLossLandscape ? 400 : 0, lf);
+	graphs.lossCurve.visible = showingLossLandscape;
 
 	lf = getLerpFactor(0.1);
 	showT = lerp(showT, 1, lf);
@@ -967,7 +975,7 @@ function update() {
 				});
 			}
 		} else if (!predicting) {
-			if (settings.lossCurve) {
+			if (settings.lossLandscape) {
 				if (!lossCurving && graphs.lossCurve.points.length <= 15) {
 					lossCurving = true;
 					worker.postMessage({
@@ -976,14 +984,14 @@ function update() {
 					});
 				}
 
-				if (!lossPlaning && lossPlanePoints.length < lossPlaneSize) {
+				if (!lossPlaning && lossLandscapePoints.length < lossLandscapeSize) {
 					lossPlaning = true;
 
-					const i = lossPlanePoints.length;
+					const i = lossLandscapePoints.length;
 					worker.postMessage({
-						id: 'lossPlane', 
-						x: ((i % lossPlaneLength) / lossPlaneLength * 2 - 1) * 1.1, 
-						y: (Math.floor(i / lossPlaneLength) / lossPlaneLength * 2 - 1) * 1.1
+						id: 'lossLandscape', 
+						x: ((i % lossLandscapeLength) / lossLandscapeLength * 2 - 1) * 1.1, 
+						y: (Math.floor(i / lossLandscapeLength) / lossLandscapeLength * 2 - 1) * 1.1
 					});
 				}
 			}
@@ -1047,7 +1055,7 @@ function render() {
 	renderBg();
 	renderBoxes();
 	settings.showLines && renderLines();
-	showingLossCurve && renderLossPlane();
+	showingLossLandscape && renderLossLandscape();
 }
 
 function renderBg() {
@@ -1157,23 +1165,23 @@ function renderLines() {
 	gl.disableVertexAttribArray(program.attributes.alpha);
 }
 
-function renderLossPlane() {
-	if (lossPlane.vertexCount > 0) {
+function renderLossLandscape() {
+	if (lossLandscape.vertexCount > 0) {
 		gl.useProgram(planeProgram);
 
 		gl.uniformMatrix4fv(planeProgram.uniforms.projectionMatrix, false, projectionMatrix);
 		gl.uniformMatrix4fv(planeProgram.uniforms.viewMatrix, false, viewMatrix);
 
-		gl.bindBuffer(gl.ARRAY_BUFFER, lossPlane.posBuffer);
+		gl.bindBuffer(gl.ARRAY_BUFFER, lossLandscape.posBuffer);
 		gl.enableVertexAttribArray(planeProgram.attributes.position);
 		gl.vertexAttribPointer(planeProgram.attributes.position, 3, gl.FLOAT, false, 0, 0);
 
-		gl.bindBuffer(gl.ARRAY_BUFFER, lossPlane.intensityBuffer);
+		gl.bindBuffer(gl.ARRAY_BUFFER, lossLandscape.intensityBuffer);
 		gl.enableVertexAttribArray(planeProgram.attributes.intensity);
 		gl.vertexAttribPointer(planeProgram.attributes.intensity, 1, gl.FLOAT, false, 0, 0);
 
 		gl.disable(gl.CULL_FACE);
-		gl.drawArrays(gl.TRIANGLES, 0, lossPlane.vertexCount);
+		gl.drawArrays(gl.TRIANGLES, 0, lossLandscape.vertexCount);
 		gl.enable(gl.CULL_FACE);
 
 		gl.disableVertexAttribArray(planeProgram.attributes.position);
@@ -1187,11 +1195,11 @@ function renderLossPlane() {
 	gl.uniformMatrix4fv(planeLineProgram.uniforms.projectionMatrix, false, projectionMatrix);
 	gl.uniformMatrix4fv(planeLineProgram.uniforms.viewMatrix, false, viewMatrix);
 
-	gl.bindBuffer(gl.ARRAY_BUFFER, lossPlane.lineBuffer);
+	gl.bindBuffer(gl.ARRAY_BUFFER, lossLandscape.lineBuffer);
 	gl.enableVertexAttribArray(planeLineProgram.attributes.position);
 	gl.vertexAttribPointer(planeLineProgram.attributes.position, 3, gl.FLOAT, false, 0, 0);
 
-	gl.drawArrays(gl.LINES, 0, lossPlane.lineCount);
+	gl.drawArrays(gl.LINES, 0, lossLandscape.lineCount);
 
 	gl.disableVertexAttribArray(planeLineProgram.attributes.position);
 }
@@ -1218,27 +1226,20 @@ function drawHud(ctx) {
 	const r = getScreenSpaceSize() * H;
 	const offset = r + 10;
 
-	if (prediction && predictT > 0.5 && depth < 100) {
-		for (let y1 = 0; y1 < hiddenLayerLength; y1++) {
-			for (let x1 = 0; x1 < hiddenLayerLength; x1++) {
-				const [x, y, z] = project(
-					getCoord(x1, hiddenLayerLength), 
-					-getCoord(y1, hiddenLayerLength), 
-					0
-				);
-
-				if (inView(x, y, z)) {
-					const v = prediction.a1[y1 * hiddenLayerLength + x1];
-					const dir = x1 % 2 === 0 ? -1 : 1;
-					ctx.fillText(v.toFixed(2), x * W, y * H + dir * offset);
-				}
+	if (prediction && predictT > 0.5 && depth < 200) {
+		for (let i = 0; i < hiddenLayerSize; i++) {
+			const p = project2(...hiddenLayerPositions[i]);
+			if (p) {
+				const dir = (i % hiddenLayerLength) % 2 === 0 ? -1 : 1;
+				ctx.fillText(prediction.a1[i].toFixed(2), p[0] * W, p[1] * H + dir * offset);
 			}
 		}
 	}
 
 	for (let i = 0; i < outputLayerSize; i++) {
-		const [x, y, z] = project(0, -(i / (outputLayerSize - 1) * 2 - 1) * outputLayerSize * gap, 50);
-		if (inView(x, y, z)) {
+		const p = project2(...outputLayerPositions[i]);
+		if (p) {
+			const [x, y] = p;
 			const dir = x > 0.5 ? 1 : -1;
 			ctx.save();
 			ctx.translate(x * W, y * H);
@@ -1272,52 +1273,11 @@ function drawHud(ctx) {
 		}
 	}
 
-	if (picked) {
-		const [x, y, z] = project(...picked.pos);
-		if (inView(x, y, z)) {
-			ctx.save();
-			ctx.translate(x * W, y * H);
-			ctx.lineWidth = 2;
-			ctx.strokeStyle = getHoverColor();
-			const s = r + (Math.sin(now / 100) * 0.5 + 0.5) * Math.min(r, 20);
-			ctx.strokeRect(-s, -s, s * 2, s * 2);
-
-			const size = 90;
-
-			ctx.translate(0, -r - 10 - size);
-
-			ctx.imageSmoothingEnabled = false;
-			ctx.drawImage(picked.image, -size / 2, 0, size, size);
-
-			ctx.translate(0, -5);
-			ctx.fillStyle = colors.label;
-			ctx.textAlign = 'center';
-			ctx.textBaseline = 'bottom';
-			ctx.fillText(picked.name, 0, 0);
-
-			ctx.restore();
-		}
-	}
-
-	if (showingLossCurve) {
-		ctx.fillStyle = colors.prob;
-		ctx.textAlign = 'center';
-		ctx.textBaseline = 'bottom';
-
-		for (let i = 0; i < lossPlane.points.length; i++) {
-			const loss = lossPlanePoints[i];
-			const [x, y, z] = project(...lossPlane.points[i]);
-			if (inView(x, y, z)) {
-				ctx.fillText(loss.toFixed(2), x * W, y * H);
-			}
-		}
-	}
-
 	if (666) {
-		const [x, y, z] = project(69, 699, 420);
-		if (inView(x, y, z)) {
+		const p = project2(69, 699, 420);
+		if (p) {
 			ctx.save();
-			ctx.translate(x * W, y * H);
+			ctx.translate(p[0] * W, p[1] * H);
 			ctx.textAlign = 'center';
 			ctx.textBaseline = 'middle';
 			ctx.font = 'bolder 50px monospace';
@@ -1346,6 +1306,47 @@ function drawHud(ctx) {
 
 			ctx.restore();
 		} 
+	}
+
+	if (picked) {
+		const p = project2(...picked.pos);
+		if (p) {
+			ctx.save();
+			ctx.translate(p[0] * W, p[1] * H);
+			ctx.lineWidth = 2;
+			ctx.strokeStyle = getHoverColor();
+			const s = r + (Math.sin(now / 100) * 0.5 + 0.5) * Math.min(r, 20);
+			ctx.strokeRect(-s, -s, s * 2, s * 2);
+
+			const size = 90;
+
+			ctx.translate(0, -r - 10 - size);
+
+			ctx.imageSmoothingEnabled = false;
+			ctx.drawImage(picked.image, -size / 2, 0, size, size);
+
+			ctx.translate(0, -5);
+			ctx.fillStyle = colors.label;
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'bottom';
+			ctx.fillText(picked.name, 0, 0);
+
+			ctx.restore();
+		}
+	}
+
+	if (showingLossLandscape) {
+		ctx.fillStyle = colors.prob;
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'bottom';
+
+		for (let i = 0; i < lossLandscape.points.length; i++) {
+			const loss = lossLandscapePoints[i];
+			const p = project2(...lossLandscape.points[i]);
+			if (p) {
+				ctx.fillText(loss.toFixed(2), p[0] * W, p[1] * H);
+			}
+		}
 	}
 
 	//
@@ -1446,7 +1447,9 @@ function getHoverColor() {
 }
 
 function getScreenSpaceSize() {
-	return Math.abs(project(0, 1, 0)[1] - project(0, 0, 0)[1]);
+	const a = project(1, 1, 1);
+	const b = project(0, 0, 0);
+	return Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2);
 }
 
 function animate() {
@@ -1552,6 +1555,11 @@ function project(x, y, z) {
 	y = 0.5 - p[1] / p[3] * 0.5;
 	z = p[2] / p[3] * 0.5 + 0.5;
 	return [x, y, z];
+}
+
+function project2(x, y, z) {
+	const p = project(x, y, z);
+	if (inView(...p)) return p;
 }
 
 function transformVector(p, matrix) {

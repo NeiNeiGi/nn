@@ -387,9 +387,9 @@ function interpolateParams(start, end, x) {
 	return p;
 }
 
-function getLossPlane(x, y) {
-	const dirX = getLossPlane.dirX || (getLossPlane.dirX = {});
-	const dirY = getLossPlane.dirY || (getLossPlane.dirY = {});
+function getlossLandscape(x, y) {
+	const dirX = getlossLandscape.dirX || (getlossLandscape.dirX = {});
+	const dirY = getlossLandscape.dirY || (getlossLandscape.dirY = {});
 
 	const oldParams = {};
 
@@ -416,7 +416,7 @@ function getLossPlane(x, y) {
 	}
 
 	postMessage({
-		id: 'lossPlane',
+		id: 'lossLandscape',
 		modelId, 
 		value: loss
 	});
@@ -427,9 +427,7 @@ addEventListener('message', event => {
 
 	switch (msg.id) {
 		case 'createDataset':
-			if (data) {
-				datasets = createDatasets(msg.dataSplit, msg.trainSplit);
-			}
+			datasets = createDatasets(msg.dataSplit, msg.trainSplit);
 			break;
 
 		case 'setLearningRate':
@@ -458,8 +456,8 @@ addEventListener('message', event => {
 			getLossCurve(msg.x);
 			break;
 
-		case 'lossPlane':
-			getLossPlane(msg.x, msg.y);
+		case 'lossLandscape':
+			getlossLandscape(msg.x, msg.y);
 			break;
 
 		default:
