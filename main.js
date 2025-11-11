@@ -25,7 +25,7 @@ let prediction;
 let epoching = false;
 let predicting = false;
 let lossCurving = false;
-let lossPlaning = false;
+let lossLandscaping = false;
 
 let lossLandscape;
 const lossLandscapePoints = [];
@@ -50,7 +50,7 @@ function updateLossLandscape() {
 		const f = (lossLandscapePoints[i] - min) / (max - min);
 		const p = [
 			((i % lossLandscapeLength) / (lossLandscapeLength - 1) * 2 - 1) * 150, 
-			-400 - 40 + f * 60, 
+			-50 + f * 60, 
 			(Math.floor(i / lossLandscapeLength) / (lossLandscapeLength - 2) * 2 - 1) * 150
 		];
 		p.f = f;
@@ -135,7 +135,7 @@ function reset() {
 	epoching = false;
 	predicting = false;
 	lossCurving = false;
-	lossPlaning = false;
+	lossLandscaping = false;
 
 	createModel();
 }
@@ -242,7 +242,7 @@ worker.onmessage = function (event) {
 
 		case 'lossLandscape': 
 			if (msg.modelId !== modelId) break;
-			lossPlaning = false;
+			lossLandscaping = false;
 			lossLandscapePoints.push(msg.value);
 			updateLossLandscape();
 			break;
@@ -501,7 +501,7 @@ gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
 const program = createProgram(`
 
-precision highp float;
+precision mediump float;
 
 attribute vec3 position;
 attribute vec3 normal;
@@ -526,7 +526,7 @@ void main() {
 
 `, `
 
-precision highp float;
+precision mediump float;
 
 varying vec3 vColor;
 
@@ -540,7 +540,7 @@ const lineGlowSize = 0.1;
 
 const lineProgram = createProgram(`
 
-precision highp float;
+precision mediump float;
 
 attribute vec3 position;
 attribute vec2 distanceAndAlpha;
@@ -557,7 +557,7 @@ void main() {
 
 `, `
 
-precision highp float;
+precision mediump float;
 
 varying vec2 vDistanceAndAlpha;
 
@@ -574,7 +574,7 @@ void main() {
 
 const bgProgram = createProgram(`
 
-precision highp float;
+precision mediump float;
 
 attribute vec3 position;
 
@@ -591,7 +591,7 @@ void main() {
 
 `, `
 
-precision highp float;
+precision mediump float;
 
 uniform sampler2D map;
 
@@ -607,7 +607,7 @@ void main() {
 
 const planeProgram = createProgram(`
 
-precision highp float;
+precision mediump float;
 
 attribute vec3 position;
 attribute float intensity;
@@ -624,7 +624,7 @@ void main() {
 
 `, `
 
-precision highp float;
+precision mediump float;
 
 varying float vIntensity;
 
@@ -636,7 +636,7 @@ void main() {
 
 const planeLineProgram = createProgram(`
 
-precision highp float;
+precision mediump float;
 
 attribute vec3 position;
 
@@ -650,7 +650,7 @@ void main() {
 
 `, `
 
-precision highp float;
+precision mediump float;
 	
 void main() {
 	gl_FragColor = vec4(0.5);
@@ -816,11 +816,11 @@ initObjects();
 
 let nrx = 0.1;
 let nry = -7;
-let nDepth = 60;
+let nDepth = 100;
 
 let rx = 0.6;
 let ry = -0.5;
-let depth = 120;
+let depth = 180;
 
 const minDepth = 2;
 const maxDepth = 300;
@@ -936,7 +936,6 @@ const sketchEl = SketchUI();
 let predictT = 0;
 
 let projectionMatrix, viewMatrix;
-let eyeY = 0;
 let showingLossLandscape = false;
 
 let now = 0;
@@ -960,7 +959,6 @@ function update() {
 	depth = lerp(depth, nDepth, lf);
 
 	showingLossLandscape = settings.lossLandscape && lossLandscape && !isTraining();
-	eyeY = lerp(eyeY, showingLossLandscape ? 400 : 0, lf);
 	graphs.lossCurve.visible = showingLossLandscape;
 
 	lf = getLerpFactor(0.1);
@@ -978,28 +976,25 @@ function update() {
 					id: 'train'
 				});
 			}
-		} else if (!predicting) {
-			if (settings.lossLandscape) {
-				if (!lossCurving && graphs.lossCurve.points.length <= lossCurveLength) {
-					lossCurving = true;
-					worker.postMessage({
-						id: 'lossCurve', 
-						x: toRange(lossCurveRange, graphs.lossCurve.points.length / lossCurveLength)
-					});
-				}
-
-				if (!lossPlaning && lossLandscapePoints.length < lossLandscapeSize) {
-					lossPlaning = true;
-
-					const i = lossLandscapePoints.length;
-					worker.postMessage({
-						id: 'lossLandscape', 
-						x: toRange(lossLandscapeRange, (i % lossLandscapeLength) / lossLandscapeLength), 
-						y: toRange(lossLandscapeRange, Math.floor(i / lossLandscapeLength) / lossLandscapeLength)
-					});
-				}
+		} else if (settings.lossLandscape) {
+			if (!lossCurving && graphs.lossCurve.points.length <= lossCurveLength) {
+				lossCurving = true;
+				worker.postMessage({
+					id: 'lossCurve', 
+					x: toRange(lossCurveRange, graphs.lossCurve.points.length / lossCurveLength)
+				});
 			}
 
+			if (!lossLandscaping && lossLandscapePoints.length < lossLandscapeSize) {
+				lossLandscaping = true;
+				const i = lossLandscapePoints.length;
+				worker.postMessage({
+					id: 'lossLandscape', 
+					x: toRange(lossLandscapeRange, (i % lossLandscapeLength) / lossLandscapeLength), 
+					y: toRange(lossLandscapeRange, Math.floor(i / lossLandscapeLength) / lossLandscapeLength)
+				});
+			}
+		} else if (!predicting) {
 			if (predictT === 0) {
 				predicting = true;
 				worker.postMessage({
@@ -1035,10 +1030,6 @@ function render() {
 		0, 0, -depth, 1
 	];
 
-	viewMatrix[12] += eyeY * viewMatrix[4];
-	viewMatrix[13] += eyeY * viewMatrix[5];
-	viewMatrix[14] += eyeY * viewMatrix[6];
-
 	const near = 0.1;
 	const far = 1000;
 	const fov = 60;
@@ -1061,9 +1052,13 @@ function render() {
 	gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
 	renderBg();
-	renderBoxes();
-	settings.showLines && renderLines();
-	showingLossLandscape && renderLossLandscape();
+	
+	if (showingLossLandscape) {
+		renderLossLandscape();	
+	} else {
+		renderBoxes();
+		settings.showLines && renderLines();
+	}
 }
 
 function renderBg() {
@@ -1168,9 +1163,9 @@ function renderLines() {
 
 	gl.drawArrays(gl.LINES, 0, lineCount);
 
-	gl.disableVertexAttribArray(program.attributes.position);
-	gl.disableVertexAttribArray(program.attributes.distance);
-	gl.disableVertexAttribArray(program.attributes.alpha);
+	gl.disableVertexAttribArray(lineProgram.attributes.position);
+	gl.disableVertexAttribArray(lineProgram.attributes.distance);
+	gl.disableVertexAttribArray(lineProgram.attributes.distanceAndAlpha);
 }
 
 function renderLossLandscape() {
@@ -1224,63 +1219,6 @@ function drawHud(ctx) {
 	ctx.save();
 	ctx.scale2(scale);
 
-	ctx.lineCap = ctx.lineJoin = 'round';
-
-	ctx.font = 'normal 10px monospace';
-	ctx.textBaseline = 'middle';	
-	ctx.textAlign = 'center';
-	ctx.fillStyle = colors.activation;
-
-	const r = getScreenSpaceSize() * H;
-	const offset = r + 10;
-
-	if (prediction && predictT > 0.5 && depth < 200) {
-		for (let i = 0; i < hiddenLayerSize; i++) {
-			const p = project2(...hiddenLayerPositions[i]);
-			if (p) {
-				const dir = (i % hiddenLayerLength) % 2 === 0 ? -1 : 1;
-				ctx.fillText(prediction.a1[i].toFixed(2), p[0] * W, p[1] * H + dir * offset);
-			}
-		}
-	}
-
-	for (let i = 0; i < outputLayerSize; i++) {
-		const p = project2(...outputLayerPositions[i]);
-		if (p) {
-			const [x, y] = p;
-			const dir = x > 0.5 ? 1 : -1;
-			ctx.save();
-			ctx.translate(x * W, y * H);
-			ctx.textAlign = x > 0.5 ? 'left' : 'right';
-			ctx.fillStyle = colors.label;
-			ctx.fillText(i, dir * offset, 0);
-
-			if (prediction && predictT > 1) {
-				ctx.textAlign = x < 0.5 ? 'left' : 'right';
-				ctx.fillStyle = colors.activation;
-				ctx.fillText(prediction.a2[i].toFixed(2), -dir * offset, 0);
-
-				if (i === prediction.result) {
-					ctx.scale(dir, 1);
-					ctx.translate(offset + 15 + (Math.sin((now / 200 % 1) * PI2) * 0.5 + 0.5) * 5, -2);
-					ctx.beginPath();
-					ctx.moveTo(0, 0);
-					ctx.lineTo(15, 12);
-					ctx.lineTo(15, 5);
-					ctx.lineTo(35, 5);
-					ctx.lineTo(35, -5);
-					ctx.lineTo(15, -5);
-					ctx.lineTo(15, -12);
-					ctx.closePath();
-					ctx.fillStyle = getHoverColor();
-					ctx.fill();
-				}
-			}
-
-			ctx.restore();
-		}
-	}
-
 	if (666) {
 		const p = project2(69, 699, 420);
 		if (p) {
@@ -1316,35 +1254,8 @@ function drawHud(ctx) {
 		} 
 	}
 
-	if (picked) {
-		const p = project2(...picked.pos);
-		if (p) {
-			ctx.save();
-			ctx.translate(p[0] * W, p[1] * H);
-			ctx.lineWidth = 2;
-			ctx.strokeStyle = getHoverColor();
-			const s = r + (Math.sin(now / 100) * 0.5 + 0.5) * Math.min(r, 20);
-			ctx.strokeRect(-s, -s, s * 2, s * 2);
-
-			const size = 90;
-
-			ctx.translate(0, -r - 10 - size);
-
-			ctx.imageSmoothingEnabled = false;
-			ctx.drawImage(picked.image, -size / 2, 0, size, size);
-
-			ctx.translate(0, -5);
-			ctx.fillStyle = colors.label;
-			ctx.textAlign = 'center';
-			ctx.textBaseline = 'bottom';
-			ctx.fillText(picked.name, 0, 0);
-
-			ctx.restore();
-		}
-	}
-
 	if (showingLossLandscape) {
-		ctx.fillStyle = colors.prob;
+		ctx.fillStyle = colors.activation;
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'bottom';
 
@@ -1355,6 +1266,8 @@ function drawHud(ctx) {
 				ctx.fillText(loss.toFixed(2), p[0] * W, p[1] * H);
 			}
 		}
+	} else {
+		drawNetworkHud(ctx, W, H);
 	}
 
 	//
@@ -1448,6 +1361,91 @@ function drawHud(ctx) {
 	ctx.restore();
 
 	ctx.restore();
+}
+
+function drawNetworkHud(ctx, W, H) {
+	ctx.lineCap = ctx.lineJoin = 'round';
+	ctx.font = 'normal 10px monospace';
+	ctx.textBaseline = 'middle';	
+	ctx.textAlign = 'center';
+	ctx.fillStyle = colors.activation;
+
+	const r = getScreenSpaceSize() * H;
+	const offset = r + 10;
+
+	if (prediction && predictT > 0.5 && depth < 200) {
+		for (let i = 0; i < hiddenLayerSize; i++) {
+			const p = project2(...hiddenLayerPositions[i]);
+			if (p) {
+				const dir = (i % hiddenLayerLength) % 2 === 0 ? -1 : 1;
+				ctx.fillText(prediction.a1[i].toFixed(2), p[0] * W, p[1] * H + dir * offset);
+			}
+		}
+	}
+
+	for (let i = 0; i < outputLayerSize; i++) {
+		const p = project2(...outputLayerPositions[i]);
+		if (p) {
+			const [x, y] = p;
+			const dir = x > 0.5 ? 1 : -1;
+			ctx.save();
+			ctx.translate(x * W, y * H);
+			ctx.textAlign = x > 0.5 ? 'left' : 'right';
+			ctx.fillStyle = colors.label;
+			ctx.fillText(i, dir * offset, 0);
+
+			if (prediction && predictT > 1) {
+				ctx.textAlign = x < 0.5 ? 'left' : 'right';
+				ctx.fillStyle = colors.activation;
+				ctx.fillText(prediction.a2[i].toFixed(2), -dir * offset, 0);
+
+				if (i === prediction.result) {
+					ctx.scale(dir, 1);
+					ctx.translate(offset + 15 + (Math.sin((now / 200 % 1) * PI2) * 0.5 + 0.5) * 5, -2);
+					ctx.beginPath();
+					ctx.moveTo(0, 0);
+					ctx.lineTo(15, 12);
+					ctx.lineTo(15, 5);
+					ctx.lineTo(35, 5);
+					ctx.lineTo(35, -5);
+					ctx.lineTo(15, -5);
+					ctx.lineTo(15, -12);
+					ctx.closePath();
+					ctx.fillStyle = getHoverColor();
+					ctx.fill();
+				}
+			}
+
+			ctx.restore();
+		}
+	}
+
+	if (picked) {
+		const p = project2(...picked.pos);
+		if (p) {
+			ctx.save();
+			ctx.translate(p[0] * W, p[1] * H);
+			ctx.lineWidth = 2;
+			ctx.strokeStyle = getHoverColor();
+			const s = r + (Math.sin(now / 100) * 0.5 + 0.5) * Math.min(r, 20);
+			ctx.strokeRect(-s, -s, s * 2, s * 2);
+
+			const size = 90;
+
+			ctx.translate(0, -r - 10 - size);
+
+			ctx.imageSmoothingEnabled = false;
+			ctx.drawImage(picked.image, -size / 2, 0, size, size);
+
+			ctx.translate(0, -5);
+			ctx.fillStyle = colors.label;
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'bottom';
+			ctx.fillText(picked.name, 0, 0);
+
+			ctx.restore();
+		}
+	}
 }
 
 function getHoverColor() {
