@@ -41,16 +41,24 @@ class Model {
 		this.a2 = new Float32Array(numSamples * outputLayerSize);
 
 		for (let i = 0; i < numSamples; i++) {
-			let sum = 0;
+			let max = -Infinity;
 
 			for (let j = 0; j < outputLayerSize; j++) {
 				const ni = i * outputLayerSize + j;
-				this.z2[ni] = this.b2[j];
+				let z = this.b2[j];
 				for (let k = 0; k < hiddenLayerSize; k++) {
-					this.z2[ni] += this.w2[j * hiddenLayerSize + k] * this.z1[i * hiddenLayerSize + k];
+					z += this.w2[j * hiddenLayerSize + k] * this.z1[i * hiddenLayerSize + k];
 				}
+				this.z2[ni] = z;
+				z > max && (max = z);
+			}
 
-				const e = Math.exp(this.z2[ni]);
+			// softmax XD
+
+			let sum = 0;
+			for (let j = 0; j < outputLayerSize; j++) {
+				const ni = i * outputLayerSize + j;
+				const e = Math.exp(this.z2[ni] - max);
 				this.a2[ni] = e;
 				sum += e;
 			}
@@ -174,7 +182,9 @@ function crossEntropy(targets, predictions) {
 	let sum = 0;
 	for (let i = 0; i < targets.length; i++) {
 		const p = predictions[i];
-		sum += isFinite(p) ? targets[i] * -Math.log(p + 1e-12) : -targets[i];
+		if (isFinite(p)) {
+			sum += targets[i] * -Math.log(p + 1e-12);
+		}
 	}
 
 	return sum / n;

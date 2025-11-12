@@ -8,11 +8,11 @@ let hiddenLayerSize = hiddenLayerLength * hiddenLayerLength;
 const epochs = 100;
 
 const lossCurveLength = 50;
-const lossLandscapeLength = 15;
+const lossLandscapeLength = 18;
 const lossLandscapeSize = lossLandscapeLength * lossLandscapeLength;
 
-const lossCurveRange = [-2, 10];
-const lossLandscapeRange = [-5, 5];
+const lossCurveRange = [-2.666, 10.420];
+const lossLandscapeRange = [-6.9, 6.9];
 
 let showT = 0;
 let progress = 0;
@@ -1260,6 +1260,8 @@ function drawHud(ctx) {
 		ctx.textBaseline = 'bottom';
 
 		for (let i = 0; i < lossLandscape.points.length; i++) {
+			if (depth > 200 && ((i % lossLandscapeLength) + Math.floor(i / lossLandscapeLength) % 2) % 2 === 0) continue;
+
 			const loss = lossLandscapePoints[i];
 			const p = project2(...lossLandscape.points[i]);
 			if (p) {
