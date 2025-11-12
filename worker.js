@@ -174,7 +174,7 @@ function crossEntropy(targets, predictions) {
 	let sum = 0;
 	for (let i = 0; i < targets.length; i++) {
 		const p = predictions[i];
-		sum += isFinite(p) ? targets[i] * -Math.log(p + 1e-12) : targets[i];
+		sum += isFinite(p) ? targets[i] * -Math.log(p + 1e-12) : -targets[i];
 	}
 
 	return sum / n;
@@ -354,16 +354,30 @@ function predict(x) {
 	});
 }
 
+const paramKeys = {
+	w1: 1, 
+	b1: 1, 
+	w2: 1, 
+	b2: 1
+};
+
 function getLossCurve(x) {
-	const startParams = getLossCurve.params || (getLossCurve.params = {});
+	const startParams = model.params || (model.params = {});
 
 	const oldParams = {};
 
-	for (const key in model) {
+	for (const key in paramKeys) {
 		const params = model[key];
 		oldParams[key] = params;
-		if (!startParams[key]) startParams[key] = createParams(params.length);
-		model[key] = interpolateParams(startParams[key], params, x);
+
+		const start = startParams[key] || (startParams[key] = createParams(params.length));
+
+		const newParams = new Float32Array(params.length);
+		for (let j = 0; j < params.length; j++) {
+			newParams[j] = start[j] * x + (1 - x) * params[j];
+		}
+
+		model[key] = newParams;
 	}
 
 	const preds = model.forward(datasets.val[0]);
@@ -378,23 +392,15 @@ function getLossCurve(x) {
 		modelId, 
 		value: loss
 	});
-}	
-
-function interpolateParams(start, end, x) {
-	const p = new Float32Array(start.length);
-	for (let j = 0; j < start.length; j++) {
-		p[j] = start[j] * x + (1 - x) * end[j];
-	}
-	return p;
 }
 
 function getlossLandscape(x, y) {
-	const dirX = getlossLandscape.dirX || (getlossLandscape.dirX = {});
-	const dirY = getlossLandscape.dirY || (getlossLandscape.dirY = {});
+	const dirX = model.dirX || (model.dirX = {});
+	const dirY = model.dirY || (model.dirY = {});
 
 	const oldParams = {};
 
-	for (const key in model) {
+	for (const key in paramKeys) {
 		const params = model[key];
 		oldParams[key] = params;
 
