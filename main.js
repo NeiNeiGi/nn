@@ -1810,7 +1810,9 @@ const btnsEl = fromHtml(`<div class="row" style="margin-top: 3px;">
 </div>`);
 settingsEl.appendChild(btnsEl);
 
-btnsEl.querySelector('.restart-btn').onclick = reset;
+btnsEl.querySelector('.restart-btn').onclick = function () {
+	reset();
+}
 
 btnsEl.querySelector('.export-btn').onclick = function () {
 	if (!params) return;
