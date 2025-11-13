@@ -120,7 +120,8 @@ function updateEpochProgress() {
 	progressText = `training epoch ${epoch}/${epochs}`;
 }
 
-function reset() {
+let modelId;
+function reset(modelParams) {
 	epoch = 0;
 	updateEpochProgress();
 	resetGraphs();
@@ -137,7 +138,16 @@ function reset() {
 	lossCurving = false;
 	lossLandscaping = false;
 
-	createModel();
+	modelId = Math.random().toString(32).slice(2);
+	
+	worker.postMessage({
+		id: 'createModel', 
+		modelId, 
+		inputLayerSize, 
+		hiddenLayerSize, 
+		outputLayerSize, 
+		params: modelParams
+	});
 }
 
 const worker = new Worker('worker.js');
@@ -188,6 +198,8 @@ worker.onmessage = function (event) {
 
 		case 'params':
 			if (msg.modelId !== modelId) break;
+			delete msg.id;
+			delete msg.modelId;
 			params = msg;
 			break;
 
@@ -250,18 +262,6 @@ worker.onmessage = function (event) {
 		default:
 			console.log(`Unknown message from worker: ${msg.id}`);
 	}
-}
-
-let modelId;
-function createModel() {
-	modelId = Math.random().toString(32).slice(2);
-	worker.postMessage({
-		id: 'createModel', 
-		modelId, 
-		inputLayerSize, 
-		hiddenLayerSize, 
-		outputLayerSize
-	});
 }
 
 function setLearningRate() {
@@ -370,14 +370,15 @@ const settingOnChange = {
 	learningRate: setLearningRate, 
 	trainSplit: createDataset, 
 	dataSplit: createDataset, 
-	hiddenLayerSideLength(n) {
-		hiddenLayerLength = n;
-		hiddenLayerSize = n * n;
-
-		initObjects();
-		reset();
-	}
+	hiddenLayerSideLength: setHiddenLayerLength
 };
+
+function setHiddenLayerLength(n, params) {
+	hiddenLayerLength = n;
+	hiddenLayerSize = n * n;
+	initObjects();
+	reset(params);
+}
 
 for (const key in settings) {
 	const value = settings[key];
@@ -388,7 +389,7 @@ for (const key in settings) {
 
 		const el = fromHtml(`<div class="row">
 			<div>${fromCamel(key)}:</div>
-			<input type="range" class="range" min="${min}" max="${max}" step="${step}">
+			<input type="range" class="range" min="${min}" max="${max}" step="${step}" id="${key}">
 			<div></div>
 		</div>`);
 
@@ -422,10 +423,6 @@ for (const key in settings) {
 		settingsEl.appendChild(el);
 	}
 }
-
-const resetBtnEl = fromHtml(`<div class="btn reset-btn" style="margin-top: 3px;">restart</div>`);
-resetBtnEl.onclick = reset;
-settingsEl.appendChild(resetBtnEl);
 
 function fromCamel(text){
 	text = text.replace(/([A-Z])/g,' $1');
@@ -1677,4 +1674,177 @@ function SketchUI() {
 	}
 
 	return el;
+}
+
+// checkpoint
+
+function encodeCheckpoint() {
+	// epoch, paramCount, ...[key, values]
+	let bytes = 4 + 1;
+
+	let paramCount = 0;
+	for (const key in params) {
+		const list = params[key];
+		// keyLength, keyBytes, count, ...values
+		bytes += 1 + key.length + 4 + list.length * 4;
+		paramCount++;
+	}
+
+	// groupCount, ...[key, values];
+	bytes += 1;
+
+	let graphCount = 0;
+	for (const key in graphs) {
+		const list = graphs[key].points;
+		// keyLength, keyBytes, count, ...values
+		bytes += 1 + key.length + 4 + list.length * 4;
+		graphCount++;
+	}
+
+	const msg = new DataView(new ArrayBuffer(bytes));
+	let offset = 0;
+
+	msg.setUint32(offset, epoch); offset += 4;
+
+	msg.setUint8(offset++, paramCount);
+	for (const key in params) {
+		offset = encodeArray(msg, offset, key, params[key]);
+	}
+
+	msg.setUint8(offset++, graphCount);
+	for (const key in graphs) {
+		offset = encodeArray(msg, offset, key, graphs[key].points);
+	}
+
+	return msg.buffer;
+}
+
+function decodeCheckpoint(buffer) {
+	const msg = new DataView(buffer);
+	let offset = 0;
+
+	const out = {};
+	out.epoch = msg.getUint32(offset); offset += 4;
+
+	out.params = {};
+	const paramCount = msg.getUint8(offset++);
+	for (let i = 0; i < paramCount; i++) {
+		const [key, list, newOffset] = decodeArray(msg, offset);
+		offset = newOffset;
+		out.params[key] = new Float32Array(list);
+	}
+
+	out.graphs = {};
+	const graphCount = msg.getUint8(offset++);
+	for (let i = 0; i < graphCount; i++) {
+		const [key, list, newOffset] = decodeArray(msg, offset);
+		offset = newOffset;
+		out.graphs[key] = list;
+	}
+
+	return out;
+}
+
+function encodeArray(msg, offset, key, list) {
+	msg.setUint8(offset++, key.length);
+	for (let i = 0; i < key.length; i++) {
+		msg.setUint8(offset++, key.charCodeAt(i));
+	}
+
+	msg.setUint32(offset, list.length); offset += 4;
+	for (let i = 0; i < list.length; i++) {
+		msg.setFloat32(offset, list[i]); offset += 4;
+	}
+
+	return offset;
+}
+
+function decodeArray(msg, offset) {
+	const keyLength = msg.getUint8(offset++);
+	let key = '';
+	for (let j = 0; j < keyLength; j++) {
+		key += String.fromCharCode(msg.getUint8(offset++));
+	}
+
+	const n = msg.getUint32(offset); offset += 4;
+	const list = [];
+	for (let i = 0; i < n; i++) {
+		list[i] = msg.getFloat32(offset); offset += 4;
+	}
+
+	return [key, list, offset];
+}
+
+function loadCheckpoint(out) {
+	if (out.params.w1.length % inputLayerSize !== 0) {
+		throw new Error(`w1 length should be a multiple of ${inputLayerLength}.`);
+	}
+
+	const size = out.params.w1.length / inputLayerSize;
+	const length = Math.sqrt(size);
+
+	if (parseInt(length) !== length) {
+		throw new Error(`hiddenLayerLength is not an integer.`);
+	}
+
+	const el = document.getElementById('hiddenLayerSideLength');
+	el.value = length;
+	el.onchange();
+
+	setHiddenLayerLength(length, out.params);
+	epoch = out.epoch;
+	updateEpochProgress();
+
+	for (const key in out.graphs) {
+		const list = out.graphs[key];
+		for (const v of list) {
+			addGraph(key, v);
+		}
+	}
+}
+
+const btnsEl = fromHtml(`<div class="row" style="margin-top: 3px;">
+	<div class="btn restart-btn">restart</div>
+	<div class="btn export-btn">export</div>
+	<div class="btn import-btn">import</div>
+</div>`);
+settingsEl.appendChild(btnsEl);
+
+btnsEl.querySelector('.restart-btn').onclick = reset;
+
+btnsEl.querySelector('.export-btn').onclick = function () {
+	if (!params) return;
+
+	const buffer = encodeCheckpoint();
+	const blob = new Blob([buffer], { type: 'application/octet-stream' });
+
+	const a = document.createElement('a');
+	a.href = URL.createObjectURL(blob);
+	a.download = `nn-h${hiddenLayerSize}-e${epoch}.666`;
+	a.click();
+}
+
+btnsEl.querySelector('.import-btn').onclick = function () {
+	const el = document.createElement('input');
+	el.type = 'file';
+	el.accept = '.666';
+
+	el.oninput = function (event) {
+		const file = this.files[0];
+		if (!file) return;
+
+		const reader = new FileReader();
+		reader.onload = function () {
+			try {
+				const out = decodeCheckpoint(reader.result);
+				loadCheckpoint(out);
+			} catch (error) {
+				alert(`Failed to import! See console for more info.`);
+				console.error(error);
+			}
+		}
+		reader.readAsArrayBuffer(file);
+	}
+
+	el.click();
 }

@@ -325,7 +325,9 @@ function sendParams() {
 		id: 'params', 
 		modelId, 
 		w1: model.w1, 
-		w2: model.w2
+		b1: model.b1, 
+		w2: model.w2, 
+		b2: model.b2
 	});
 }
 
@@ -457,6 +459,13 @@ addEventListener('message', event => {
 			outputLayerSize = msg.outputLayerSize;
 			modelId = msg.modelId;
 			model = new Model();
+
+			if (msg.params) {
+				for (const key in msg.params) {
+					model[key] = msg.params[key];
+				}
+			}
+			
 			sendParams();
 			break;
 
